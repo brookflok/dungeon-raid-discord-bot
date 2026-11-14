@@ -85,8 +85,8 @@ flowchart LR
 |---|---|
 | Changeability | A core with all rules, feature modules that plug into a registry, thin outer layers (ADR-1). One generic activity with templates instead of one code path per kind (ADR-2). |
 | Cheap Discord-side changes | Dungeon and raid lists, templates, reminders, channels and officer roles are data changed with officer commands. |
-| Reliable notifications | Core methods return a list of effects; the Discord layer performs them. Reminders and closing are database rows checked by a scheduler (ADR-5). Changes to one activity are applied one at a time inside a transaction. Posts are re-rendered from stored state. |
-| Testability | The core depends on interfaces (storage, clock, character source). Tests use in-memory storage, a fake clock and a fake character source. The SQLite storage is tested against a temporary file. |
+| Reliable notifications | Core methods return a list of effects; the Discord layer performs them. Reminders and closing are database rows checked by a scheduler (ADR-5). Activity changes are applied one at a time by a single queue inside the bot process, not by a database transaction, so exactly one bot process may use a database. Posts are re-rendered from stored state. When no thread can be had, the mentions go out as replies to the post. |
+| Testability | The core depends on two interfaces it defines (`Storage`, `Clock`) and receives fetched characters as plain data (`FetchedCharacter`). Tests use in-memory storage and a fake clock; the web layer is tested with a fake `BlizzardClient` and the Blizzard client with a fake `fetch`. The SQLite storage is tested against a temporary file. |
 | Privacy | No stored Battle.net tokens, one-time random links, state value bound to the Discord user, `/profile remove` deletes data (ADR-4). |
 | Resilience to Blizzard changes | The Blizzard client is the only code that knows the lookup, and manual profiles are always possible (ADR-4). |
 
@@ -118,6 +118,7 @@ flowchart TD
     main --> web
     main --> blizzard
     main --> storage
+    main --> core
     modules --> discord
     modules --> core
     discord --> core
@@ -136,7 +137,7 @@ Arrows mean "imports". `src/env.ts` (configuration) and `src/log.ts` (logging) a
 | `src/modules` | Feature modules: dungeons, raids, events, profiles, admin. Each declares its slash commands and handles its commands, autocomplete, buttons and forms by calling the core. Helpers shared by several modules live in `shared-options.ts` and `admin-parse.ts`. No module imports another. | Each exports a `BotModule` (defined in `src/discord/registry.ts`). `index.ts` is the registration list: the single place a feature is registered, and the only file that imports all modules. |
 | `src/discord` | discord.js. `registry.ts` routes commands and autocomplete by command name, and buttons, menus and forms by custom-id prefix. `render.ts` builds every post from stored state. `effects.ts` is the publisher: it turns an `ActivityResult` into a post, a post edit, thread messages, mentions and direct messages. `signup-buttons.ts` handles the buttons on every post. | `BotModule`, `Services`, `createRouter`, `createPublisher`. |
 | `src/storage` | Implements `Storage`: in memory (tests) and SQLite with versioned migrations, applied at startup. | `Storage` of the core. |
-| `src/web` | Minimal `node:http` server with two routes: `/link/:token` starts the Battle.net login, `/callback` finishes it. | Uses `ProfileService` and the Blizzard client. Reports a finished link through an `onLinked` callback, which `main.ts` sets to the direct message from `src/modules/profiles.ts`. |
+| `src/web` | Minimal `node:http` server with two routes: `/link/:token` starts the Battle.net login, `/callback` finishes it. | Uses `ProfileService` and the Blizzard client. Reports a finished link through an `onLinked` callback, which `main.ts` sets to the direct message from `src/discord/notify-linked.ts`. |
 | `src/blizzard` | Battle.net OAuth code exchange and the Forever character lookup. | Defines the `BlizzardClient` interface that the web layer uses. |
 | `src/scheduler.ts` | Every 30 seconds, starting when the Discord client is ready: runs the due jobs through `ActivityService` and hands each result to the publisher. One failing job does not stop the others. | Core, clock, publisher (`onResult`). |
 | `src/main.ts` | Composition root. Validates the environment, opens the SQLite storage, creates exactly one instance of each service, seeds the templates, connects to Discord with only the `Guilds` intent, starts the scheduler and the web server, and stops everything on `SIGTERM` or `SIGINT`. | Environment variables. |
@@ -172,6 +173,7 @@ flowchart LR
       render[render.ts]
       effects[effects.ts]
       signup[signup-buttons.ts]
+      notify[notify-linked.ts]
     end
     subgraph storage[src/storage]
       memory[memory.ts]
@@ -183,6 +185,7 @@ flowchart LR
     index --> signup
     main --> registry
     main --> effects
+    main --> notify
     mods --> shared
     mods --> registry
     mods --> core
@@ -215,13 +218,14 @@ flowchart LR
 | `src/discord/render.ts` | Turns an activity of any kind into a message payload. |
 | `src/discord/effects.ts` | The publisher: post, thread, mentions, direct messages. |
 | `src/discord/signup-buttons.ts` | Shared handler for the buttons on every activity post. |
+| `src/discord/notify-linked.ts` | The direct message listing a member's characters after a Battle.net link. |
 | `src/modules/index.ts` | Registration list of all modules, read by `main.ts` and `register-commands.ts`. |
 | `src/modules/{dungeons,raids,events,profiles,admin}.ts` | Feature modules: slash commands and their handlers. |
 | `src/modules/shared-options.ts` | Shared by dungeons, raids and events: time and post options, the cancel and time subcommands, template choice and autocomplete, publishing a new post. |
 | `src/modules/admin-parse.ts` | Reading and writing reminder offsets such as "24h, 1h, 15m". |
 | `src/blizzard/client.ts` | OAuth exchange and Forever character lookup. |
 | `src/web/server.ts` | The two routes `/link/:token` and `/callback`. |
-| `seed/templates.json` | Initial dungeons and raids, added at every start when no template of that kind has the name. `main` reads it as `../seed/templates.json`, so the same path works from `src/` and `dist/`. |
+| `seed/templates.json` | Initial dungeons and raids, added at startup only while the guild has no dungeon or raid template at all (disabled ones count), so a renamed or disabled seed template is never added again. `main` reads it as `../seed/templates.json`, so the same path works from `src/` and `dist/`. |
 | `Dockerfile`, `.dockerignore` | The container image (section 7). |
 | `docs/operations.md` | Setup, deployment, backup and the manual test checklist. |
 | `tests/` | Vitest tests, mirroring `src/`. `tests/support/storage-contract.ts` runs the same storage tests against both storages. |
@@ -243,7 +247,7 @@ sequenceDiagram
     D->>M: acknowledge interaction
     D->>Mod: route button
     Mod->>C: join(activity, member, healer)
-    C->>S: load activity, save signup (one transaction)
+    C->>S: load activity, save signup (in the queue, one change at a time)
     C-->>Mod: effects [filled]
     Mod-->>D: effects
     D->>D: re-render post from stored state
@@ -351,15 +355,15 @@ Errors a member should see (for example "only officers can post raids", "could n
 
 ### Serialised mutations
 
-Changes to one activity are applied one at a time, inside a database transaction. Two simultaneous clicks on the last slot cannot overfill it: one succeeds, the other is waitlisted.
+Every activity change (create, sign up, leave, cancel, change time, run a due job) goes through one queue inside `ActivityService`, which applies the changes one at a time. Two simultaneous clicks on the last slot cannot overfill it: one succeeds, the other is waitlisted. This is not a database transaction: SQLite transactions wrap only replacing an activity's jobs, deleting a member, taking a link token and the migrations. The queue exists only inside one process, so `main.ts` creates exactly one `ActivityService` and exactly one bot process may use a database; a second process on the same file could overfill a group.
 
 ### Re-render from state
 
-A post is always built from stored state and never patched incrementally. If an edit to Discord fails, the same render can be run again. The thread is created the first time it is needed and then reused.
+A post is always built from stored state and never patched incrementally. If an edit to Discord fails, the same render can be run again. The thread is created the first time it is needed and then reused. If it cannot be created (for example without the Create Public Threads permission), the bot uses a thread that already exists on the post; if there is none, it sends the same mentions as replies to the post.
 
 ### Secrets and tokens
 
-Secrets come only from environment variables, validated at startup with zod. Battle.net access tokens are used once and never stored or logged. One-time links are random, single use and valid for 10 minutes. The login state value is bound to the Discord user.
+Secrets come only from environment variables, validated at startup with zod. Battle.net access tokens are used once and never stored or logged. One-time links are random, single use and valid for 10 minutes. The login state value is bound to the Discord user. `/profile remove` deletes the member and their characters but not their signups: each signup keeps the label it was made with, so a removed character's name stays on the posts the member signed up to, also when they are re-rendered, unless the member leaves or signs up again while the group is open.
 
 ### Time
 
@@ -399,7 +403,7 @@ Dungeons, raids and templates are data (seed file, then officer commands). Remin
 
 - *Status:* accepted.
 - *Context:* The Forever lookup is unofficial. Members' accounts must not be put at risk, and group finding must not depend on Blizzard.
-- *Decision:* the bot uses the access token once to read the member's characters, then discards it; tokens are never stored or logged. Profiles can always be entered by hand. A Battle.net account can be linked to one Discord member only *(call)*. The Blizzard region is a setting, default `eu` *(call)*. The Blizzard client is isolated behind a character source interface.
+- *Decision:* the bot uses the access token once to read the member's characters, then discards it; tokens are never stored or logged. Profiles can always be entered by hand. A Battle.net account can be linked to one Discord member only *(call)*. The Blizzard region is a setting, default `eu` *(call)*. The Blizzard client is isolated behind the `BlizzardClient` interface, which only the web layer uses; the core receives the fetched characters as plain data (`FetchedCharacter`).
 - *Consequences:* changing levels needs `/profile refresh` (a new login). If Blizzard changes the lookup, only the client changes and manual profiles keep working.
 
 ### ADR-5: Jobs in the database
@@ -421,7 +425,7 @@ The quality scenarios are in [req42 section 6](../requirements/req42.adoc). In s
 | Discord changes its interaction interfaces. | The change is confined to the Discord layer. |
 | The single SQLite file is lost. | The deployment documentation must include a backup routine. |
 | The Blizzard secret was exposed during testing. | Regenerate it and update the redirect URL before going live. |
-| Modules slowly start to depend on each other. | Add an automated import check to lint or tests that enforces the layer rules. |
+| Modules slowly start to depend on each other. | ESLint `no-restricted-imports` rules enforce the layer rules: `src/core` imports neither discord.js, better-sqlite3 nor `node:http`, nor another `src/` folder, and a file in `src/modules` imports no other module (only the helpers `shared-options.ts` and `admin-parse.ts`; `index.ts` is exempt). |
 
 Technical debt: none yet; no code exists.
 

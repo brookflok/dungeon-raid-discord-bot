@@ -107,7 +107,7 @@ Run these commands in `/srv/guild-bot`.
 
 **Stopping.** `docker stop guild-bot` asks the bot to stop. It stops the reminder loop, closes the web server, disconnects from Discord and closes the database cleanly.
 
-**Updating** to a new version of the code:
+**Updating** to a new version of the code. Make a backup first (section 8), then run:
 
 ```sh
 cd /srv/guild-bot
@@ -117,7 +117,7 @@ docker stop guild-bot
 docker rm guild-bot
 ```
 
-Then start it again with the `docker run` command from step 3, and register the commands again (section 7, step 2). Database changes are applied automatically when the bot starts. Make a backup first (section 8).
+Then start it again with the `docker run` command from step 3, and register the commands again (section 7, step 2). Database changes are applied automatically when the bot starts.
 
 ## 6. HTTPS with a reverse proxy
 
@@ -213,6 +213,8 @@ Preparation: invite the bot to a test server and set `GUILD_ID` to that server's
 /template add kind:dungeon name:Test pair tank:1 healer:0 dps:1
 ```
 
+A count of 0 means the role is not part of the group: `Test pair` posts show only a Tank and a DPS line and button, and no Healer line.
+
 Dungeon finder:
 
 - [ ] `/template add` shows up in `/dungeon start` autocomplete: typing "Test" in the `dungeon` option of `/dungeon start` offers `Test pair`.
@@ -222,6 +224,7 @@ Dungeon finder:
 - [ ] Leave when full, then refill: on a full group with nobody waiting, the DPS member clicks **Leave**; the post shows a free DPS slot again. Another account clicks **DPS**. The thread shows only "✅ The group is full again." and nobody receives a direct message.
 - [ ] Direct messages disabled: one test account switches off direct messages from this server (server menu, **Privacy Settings**, **Direct Messages** off). A group with that account fills. The other member still receives the direct message, the thread mention arrives, and `docker logs guild-bot` shows no error for it.
 - [ ] Deleted thread: delete the thread of a group, then trigger another notification for it (for example `/dungeon time when:tomorrow 21:00` as the starter). A new thread is created on the post with the message "🕐 New time: …".
+- [ ] No thread permission: in the dungeon channel's permission settings, remove the bot's **Create Public Threads** permission, then fill a new `Test pair` group. No thread opens; "✅ The group is full…" and the mention of both members arrive as replies to the post, and both members still receive the direct message. Give the permission back afterwards.
 - [ ] Deleted post: start a group with a `when` about 20 minutes ahead, delete its post in Discord, and click nothing. When the reminder is due (15 minutes before the start), the log shows an error line with `"msg":"publish: post"`, and the bot keeps working: starting another group still works.
 - [ ] Closed group: a cancelled post shows "🚫 Cancelled" and no buttons. To check the answer to a late click, give a test account two characters (`/profile add` twice), let it click **Tank** or **DPS** on an open group so that the private character menu appears, cancel the group with `/dungeon cancel`, then pick a character in the menu. The answer is "This group is closed."
 

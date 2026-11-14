@@ -103,9 +103,9 @@ Each epic matches one goal of version 1. Story ids use these prefixes: `DF` dung
 
 === Epic DF: Dungeon finder
 
-*DF-1 Start a dungeon group.* As a member I run `/dungeon` and choose a dungeon, my role and the time option, so that a group post appears.
+*DF-1 Start a dungeon group.* As a member I run `/dungeon start` and choose a dungeon, my role and the time option, so that a group post appears.
 
-* The bot answers privately with a dungeon choice list (with search), a role choice and a time option.
+* `/dungeon start` has a `dungeon` option that searches the enabled dungeon templates as I type, a `role` option (Tank, Healer or DPS) and an optional `when` option (a date and time, `asap` or `flexible`; empty means as soon as possible). The bot confirms privately with a link to the post.
 * The bot posts in the configured group-finder channel. The post shows title, starter, time, one line per role with filled and total slots and the names of members, and a waitlist line.
 * The starter always takes a slot with the chosen role.
 
@@ -158,6 +158,7 @@ Status: implemented in v1.
 
 * Signed-up members are notified in the thread or, if none exists, by a mention on the post.
 * A time change reschedules the reminders.
+* A change to "as soon as possible" or "flexible" is refused once that limit (2 hours or 7 days, see DF-5) has passed since posting.
 
 Status: implemented in v1.
 
@@ -170,7 +171,7 @@ Status: implemented in v1.
 
 *DF-9 Finish.* As a member I see that an activity is over.
 
-* Three hours after the start time the post is marked finished and its buttons are removed *(call)*. For an activity with no time, three hours after it became full.
+* Three hours after the start time the post is marked finished and its buttons are removed *(call)*. For an activity with no time, three hours after it most recently became full.
 
 Status: implemented in v1.
 
@@ -205,9 +206,16 @@ Status: implemented in v1.
 
 Status: implemented in v1.
 
+*RF-5 Cancel or reschedule.* As the starter (or an officer) I can cancel a raid or change its time with `/raid cancel` and `/raid time`.
+
+* Members are notified and reminders rescheduled as in DF-7. The new time must be a date and time (RF-1).
+* The raid finishes as in DF-9.
+
+Status: implemented in v1.
+
 === Epic EV: Event planner
 
-*EV-1 Post an event.* As a member I run `/event` and fill in a form to post an event.
+*EV-1 Post an event.* As a member I run `/event post`, which opens a form, and fill it in to post an event.
 
 * The form has title, description, time (as in DF-5) and maximum people (empty means unlimited).
 * Events have no templates; everything comes from the form *(call)*.
@@ -226,6 +234,13 @@ Status: implemented in v1.
 
 * One reminder goes to the thread 1 hour before *(call)*. Unlimited events send only this reminder.
 * An event with no signups stays open until its time (or until it expires, see DF-5).
+
+Status: implemented in v1.
+
+*EV-4 Cancel or reschedule.* As the starter (or an officer) I can cancel an event or change its time with `/event cancel` and `/event time`.
+
+* Members are notified and reminders rescheduled as in DF-7. The new time can be any time option of DF-5.
+* The event finishes as in DF-9, or expires as in DF-5.
 
 Status: implemented in v1.
 

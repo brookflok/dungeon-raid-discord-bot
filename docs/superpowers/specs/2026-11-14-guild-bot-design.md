@@ -112,7 +112,7 @@ Rules that apply to all kinds **(calls)**:
   - A full activity that loses a member goes back to open; the first waitlisted member for that
     role is promoted and mentioned in the thread. When it fills again, a short "full again" note
     goes to the thread only, with no direct messages.
-  - Finished: start time plus 3 hours. For an activity with no time: 3 hours after it became full.
+  - Finished: start time plus 3 hours. For an activity with no time: 3 hours after it most recently became full.
   - Expired: the 2-hour (ASAP) and 7-day (flexible) limits count from posting and apply while the
     activity is open, including unlimited events and activities that were full and reopened.
   - A timed activity that is not full at its start time simply continues to "finished"; the
@@ -250,9 +250,9 @@ ESLint and Prettier; configuration through environment variables validated at st
 logs; Docker image for deployment; GitHub Actions running lint, type check and tests.
 
 **Robustness:** button clicks are answered within Discord's 3-second limit (acknowledge first,
-then work); signup changes for one activity are applied one at a time inside a database
-transaction so two simultaneous clicks cannot overfill a slot; the post is re-rendered from stored
-state, so a failed edit can be retried.
+then work); signup changes are applied one at a time by a single queue inside the bot process (not a
+database transaction), so two simultaneous clicks cannot overfill a slot and exactly one bot process
+may use a database; the post is re-rendered from stored state, so a failed edit can be retried.
 
 **Security and privacy:** secrets only in environment variables; one-time links are random,
 single-use and expire; the login uses a state value bound to the Discord user; access tokens are
