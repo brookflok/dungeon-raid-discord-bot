@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { planJobs } from './jobs.js';
 import type { Clock, Storage } from './ports.js';
 import {
   UserError,
   type Activity,
+  type Job,
   type Kind,
   type Role,
   type Signup,
@@ -105,7 +107,7 @@ export class ActivityService {
       }
       const effects: Effect[] = [];
       await this.refreshState(activity, effects);
-      return this.result(activity.id, effects);
+      return this.finish(activity.id, effects);
     });
   }
 
@@ -127,6 +129,9 @@ export class ActivityService {
       );
       const same = 'role' in choice ? existing?.role === role : existing?.status === choice.status;
       if (existing && same) {
+        if (existing.label !== choice.label) {
+          await this.storage.upsertSignup({ ...existing, label: choice.label });
+        }
         return this.result(activityId, effects);
       }
       if (existing) {
@@ -155,7 +160,7 @@ export class ActivityService {
       }
       await this.storage.upsertSignup(signup);
       await this.refreshState(activity, effects);
-      return this.result(activityId, effects);
+      return this.finish(activityId, effects);
     });
   }
 
@@ -181,7 +186,7 @@ export class ActivityService {
           activity.state = 'expired';
           await this.storage.updateActivity(activity);
           effects.push({ type: 'closed', reason: 'empty' });
-          return this.result(activityId, effects);
+          return this.finish(activityId, effects);
         }
         if (next) {
           activity.starterId = next.userId;
@@ -190,7 +195,61 @@ export class ActivityService {
         }
       }
       await this.refreshState(activity, effects);
-      return this.result(activityId, effects);
+      return this.finish(activityId, effects);
+    });
+  }
+
+  cancel(activityId: string, actor: Actor): Promise<ActivityResult> {
+    return this.serialize(async () => {
+      const activity = await this.requireManageable(activityId, actor);
+      activity.state = 'cancelled';
+      await this.storage.updateActivity(activity);
+      return this.finish(activityId, [{ type: 'cancelled' }]);
+    });
+  }
+
+  setTime(activityId: string, actor: Actor, time: TimeSpec): Promise<ActivityResult> {
+    return this.serialize(async () => {
+      const activity = await this.requireManageable(activityId, actor);
+      if (activity.kind === 'raid' && time.type !== 'at') {
+        throw new UserError('A raid needs a date and time.');
+      }
+      if (time.type === 'at' && time.at < this.clock.now()) {
+        throw new UserError('That time is in the past. Try "today 20:30" or "2026-11-20 19:00".');
+      }
+      activity.time = time;
+      await this.storage.updateActivity(activity);
+      return this.finish(activityId, [{ type: 'timeChanged' }]);
+    });
+  }
+
+  /** Carries out a due job. Returns null when there is nothing to announce. */
+  runJob(job: Job): Promise<ActivityResult | null> {
+    return this.serialize(async () => {
+      const activity = await this.storage.getActivity(job.activityId);
+      if (!activity || (activity.state !== 'open' && activity.state !== 'full')) return null;
+
+      if (job.type === 'reminder') {
+        const overdueMs = this.clock.now().getTime() - job.dueAt.getTime();
+        if (overdueMs > 10 * 60_000 || activity.time.type !== 'at') return null;
+        const signups = await this.storage.listSignups(activity.id);
+        if (!signups.some((s) => s.status === 'confirmed' || s.status === 'tentative')) {
+          return null;
+        }
+        const minutesBefore = Math.round(
+          (activity.time.at.getTime() - job.dueAt.getTime()) / 60_000,
+        );
+        return this.result(activity.id, [{ type: 'reminder', minutesBefore }]);
+      }
+      if (job.type === 'expire') {
+        if (activity.state !== 'open') return null;
+        activity.state = 'expired';
+        await this.storage.updateActivity(activity);
+        return this.finish(activity.id, [{ type: 'closed', reason: 'expired' }]);
+      }
+      activity.state = 'finished';
+      await this.storage.updateActivity(activity);
+      return this.finish(activity.id, [{ type: 'closed', reason: 'finished' }]);
     });
   }
 
@@ -218,6 +277,22 @@ export class ActivityService {
     const activity = await this.storage.getActivity(activityId);
     if (!activity) throw new UserError('That group no longer exists.');
     return activity;
+  }
+
+  private async requireManageable(activityId: string, actor: Actor): Promise<Activity> {
+    const activity = await this.requireActivity(activityId);
+    if (actor.userId !== activity.starterId && !actor.isOfficer) {
+      throw new UserError('Only the starter or an officer can do that.');
+    }
+    if (activity.state !== 'open' && activity.state !== 'full') throw new UserError(CLOSED);
+    return activity;
+  }
+
+  /** Re-plans the activity's jobs from its stored state, then builds the result. */
+  private async finish(activityId: string, effects: Effect[]): Promise<ActivityResult> {
+    const activity = (await this.storage.getActivity(activityId))!;
+    await this.storage.replaceJobs(activityId, planJobs(activity, this.clock.now()));
+    return this.result(activityId, effects);
   }
 
   private async result(activityId: string, effects: Effect[]): Promise<ActivityResult> {

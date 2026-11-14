@@ -218,6 +218,24 @@ describe('ActivityService signups', () => {
     expect(statuses).toEqual(['confirmed', 'waitlist']);
   });
 
+  it('choosing the same role with a different label updates the label only', async () => {
+    const id = await dungeon();
+    await join(id, 'u2', healer);
+    const before = (await svc.get(id))!.signups.find((s) => s.userId === 'u2')!;
+    const r = await join(id, 'u2', { role: 'healer', label: 'Alt' });
+    const after = r.signups.find((s) => s.userId === 'u2')!;
+    expect(after).toEqual({ ...before, label: 'Alt' });
+    expect(r.signups).toHaveLength(2);
+  });
+
+  it('leaving a closed activity is rejected and changes nothing', async () => {
+    const id = await dungeon();
+    const a = (await storage.getActivity(id))!;
+    await storage.updateActivity({ ...a, state: 'cancelled' });
+    await expect(svc.leave(id, 'u1')).rejects.toThrow('This group is closed.');
+    expect((await svc.get(id))!.signups).toHaveLength(1);
+  });
+
   it('stores post and thread ids', async () => {
     const id = await dungeon();
     await svc.setPost(id, { channelId: 'c1', messageId: 'm1' });
