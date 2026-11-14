@@ -42,9 +42,11 @@ export function routeKey(customId: string): { module: string; args: string[] } {
 }
 
 export function createRouter(modules: BotModule[], s: Services): (i: Interaction) => Promise<void> {
-  const byName = new Map(modules.map((m) => [m.name, m]));
+  const byName = new Map<string, BotModule>();
   const byCommand = new Map<string, BotModule>();
   for (const m of modules) {
+    if (byName.has(m.name)) throw new Error(`Module "${m.name}" is registered twice.`);
+    byName.set(m.name, m);
     for (const c of m.commands) {
       if (byCommand.has(c.name)) throw new Error(`Command "${c.name}" is registered twice.`);
       byCommand.set(c.name, m);

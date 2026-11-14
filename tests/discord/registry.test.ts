@@ -47,6 +47,18 @@ describe('createRouter', () => {
     ).toThrow();
   });
 
+  it('throws when two modules use the same name (custom-id prefix)', () => {
+    expect(() =>
+      createRouter(
+        [
+          { name: 'act', commands: [] },
+          { name: 'act', commands: [{ name: 'other', description: 'other' }] },
+        ],
+        services,
+      ),
+    ).toThrow('Module "act" is registered twice.');
+  });
+
   it('answers a UserError privately with its message', async () => {
     const route = createRouter(
       [

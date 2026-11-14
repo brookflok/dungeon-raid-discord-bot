@@ -106,16 +106,39 @@ export function createPublisher(
     return message;
   }
 
-  /** The stored thread if it still exists, otherwise a new thread on the post. */
-  async function groupThread(view: ActivityView, post?: Message): Promise<SendableChannels> {
+  /**
+   * The stored thread if it still exists, otherwise a new thread on the post, otherwise the thread
+   * that already exists on the post; null when there is none. Each failed step is logged.
+   */
+  async function groupThread(view: ActivityView, post?: Message): Promise<SendableChannels | null> {
     const { activity } = view;
     if (activity.threadId) {
       const existing = await client.channels.fetch(activity.threadId).catch(() => null);
       if (existing?.isSendable()) return existing;
     }
-    if (!post) throw new Error('no post to start a thread on');
-    const thread = await post.startThread({ name: activity.title.slice(0, 100) });
-    await activities.setThread(activity.id, thread.id);
+    let thread: SendableChannels | null = null;
+    if (post) {
+      try {
+        thread = await post.startThread({ name: activity.title.slice(0, 100) });
+      } catch (err) {
+        log.error('publish: start thread', { activityId: activity.id, err });
+      }
+    }
+    if (!thread && activity.messageId) {
+      // A message's thread has the message's id, e.g. one a simultaneous publish just started.
+      try {
+        const found = await client.channels.fetch(activity.messageId);
+        if (found?.isThread()) thread = found;
+      } catch (err) {
+        log.error('publish: find thread', { activityId: activity.id, err });
+      }
+    }
+    if (!thread) return null;
+    try {
+      await activities.setThread(activity.id, thread.id);
+    } catch (err) {
+      log.error('publish: store thread', { activityId: activity.id, err });
+    }
     return thread;
   }
 
@@ -140,10 +163,21 @@ export function createPublisher(
       const messages = threadMessages(view, r.effects);
       if (messages.length > 0) {
         const thread = await groupThread(view, post);
-        for (const m of messages) await thread.send(m);
+        if (thread) {
+          for (const m of messages) await thread.send(m);
+        } else {
+          // Without a thread the members are mentioned in replies to the post (spec 5.3 step 8).
+          const { channelId, messageId } = activity;
+          if (!channelId || !messageId) throw new Error('no thread and no post to reply to');
+          const channel = await client.channels.fetch(channelId);
+          if (!channel?.isSendable()) throw new Error(`channel ${channelId} is not sendable`);
+          for (const m of messages) {
+            await channel.send({ ...m, reply: { messageReference: messageId } });
+          }
+        }
       }
     } catch (err) {
-      log.error('publish: thread', { activityId: activity.id, err });
+      log.error('publish: mentions', { activityId: activity.id, err });
     }
 
     try {
