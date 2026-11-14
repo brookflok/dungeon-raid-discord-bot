@@ -4,11 +4,9 @@ import {
   InteractionContextType,
   MessageFlags,
   SlashCommandBuilder,
-  type Client,
   type SlashCommandStringOption,
 } from 'discord.js';
 import { CLASSES, characterLabel } from '../core/profiles.js';
-import type { Character } from '../core/types.js';
 import type { BotModule } from '../discord/registry.js';
 import { log } from '../log.js';
 
@@ -18,19 +16,6 @@ const characterOption = (required: boolean) => (o: SlashCommandStringOption) =>
     .setDescription(required ? 'Which character' : 'Which character; leave empty for everything')
     .setRequired(required)
     .setAutocomplete(true);
-
-/** The web server's onLinked: a direct message listing the linked characters. */
-export function notifyLinked(
-  client: Client,
-): (userId: string, characters: Character[]) => Promise<void> {
-  return async (userId, characters) => {
-    const list = characters.map((c) => `• ${characterLabel(c)}`).join('\n');
-    // The member already saw the result page; a closed inbox is not an error.
-    await client.users
-      .send(userId, `Your Battle.net account is linked. Characters:\n${list}`)
-      .catch(() => undefined);
-  };
-}
 
 export const profiles: BotModule = {
   name: 'profile',

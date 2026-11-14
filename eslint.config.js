@@ -19,4 +19,23 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // index.ts is the registration list, not a module; it imports every module.
+    files: ['src/modules/*.ts'],
+    ignores: ['src/modules/index.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['./*', '!./shared-options.js', '!./admin-parse.js'],
+              message:
+                'a module must not import another module; only shared-options.ts and admin-parse.ts are shared helpers',
+            },
+          ],
+        },
+      ],
+    },
+  },
 );
