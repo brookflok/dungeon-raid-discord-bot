@@ -238,28 +238,40 @@ Status: implemented in v1.
 * The bot reads the member's Forever characters once, stores them, discards the access token and confirms in Discord. Access tokens are never stored or logged.
 * The region for the Blizzard lookup is a setting, default `eu` *(call)*.
 
+Status: implemented in v1.
+
 *PR-2 Link rules.* As a member I want my profile to stay correct after a relink.
 
 * A Battle.net account can be linked to one Discord member only; a second member trying to link it is refused with an explanation *(call)*.
 * On link or refresh, a manual character with the same name and surname as a returned one becomes that linked character *(call)*.
 * Linked characters Blizzard no longer returns are removed. Manual characters are untouched *(call)*.
 
+Status: implemented in v1.
+
 *PR-3 Enter characters by hand.* As a member I run `/profile add` with name, surname (optional), class and level.
 
 * This works when Battle.net is unavailable. Group finding never requires a profile.
+
+Status: implemented in v1.
 
 *PR-4 Show and choose main.* As a member I run `/profile show` and `/profile main`.
 
 * Characters are displayed as `Brook Flok, Priest 37`.
 * If the main character is removed, the highest-level remaining character becomes main *(call)*.
 
+Status: implemented in v1.
+
 *PR-5 Remove my data.* As a member I run `/profile remove` to delete one character or everything.
 
 * Removing everything also removes the Battle.net link and all stored data about the member.
 
+Status: implemented in v1.
+
 *PR-6 Refresh.* As a member I run `/profile refresh` to repeat the login and update levels and new characters.
 
 * The same rules as PR-2 apply.
+
+Status: implemented in v1.
 
 === Epic AD: Officer commands
 
