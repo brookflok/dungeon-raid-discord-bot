@@ -40,6 +40,15 @@ describe('TemplateService', () => {
     await templates.add({ guildId: 'g', kind: 'raid', name: 'Deadmines', slots });
   });
 
+  it('listAll includes disabled templates of one kind, sorted by name', async () => {
+    const { templates } = setup();
+    const z = await templates.add({ guildId: 'g', kind: 'dungeon', name: 'Zeta', slots });
+    await templates.add({ guildId: 'g', kind: 'dungeon', name: 'Alpha', slots });
+    await templates.add({ guildId: 'g', kind: 'raid', name: 'Other', slots });
+    await templates.setEnabled(z.id, false);
+    expect((await templates.listAll('g', 'dungeon')).map((t) => t.name)).toEqual(['Alpha', 'Zeta']);
+  });
+
   it('list hides disabled templates and sorts by name', async () => {
     const { templates } = setup();
     await templates.add({ guildId: 'g', kind: 'dungeon', name: 'Zeta', slots });

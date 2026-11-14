@@ -83,6 +83,11 @@ export class TemplateService {
     return all.filter((t) => t.enabled).sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  async listAll(guildId: string, kind: 'dungeon' | 'raid'): Promise<Template[]> {
+    const all = await this.storage.listTemplates(guildId, kind);
+    return all.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   async resolve(id: string): Promise<{
     title: string;
     kind: 'dungeon' | 'raid';

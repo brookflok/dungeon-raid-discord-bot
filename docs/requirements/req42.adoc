@@ -267,16 +267,26 @@ Status: implemented in v1.
 
 * An officer is a member with one of the Discord roles configured as officer roles. Server administrators always count *(call)*.
 
+Status: implemented in v1.
+
 *AD-2 Channels.* As an officer I run `/config channels` to choose the channel in which each activity kind posts.
 
+Status: implemented in v1.
+
 *AD-3 Officer roles.* As an officer I run `/config officers` to choose which Discord roles are officers.
+
+Status: implemented in v1.
 
 *AD-4 Reminders.* As an officer I run `/config reminders` to set the default reminder offsets per kind.
 
 * Defaults: dungeon 15 minutes; raid 1440 and 60 minutes; event 60 minutes.
 * A template may override the per-kind setting (see DF-6).
 
+Status: implemented in v1.
+
 *AD-5 Timezone.* As an officer I run `/config timezone` to set the guild's timezone for typed times (default Europe/Berlin).
+
+Status: implemented in v1.
 
 *AD-6 Templates.* As an officer I run `/template add`, `/template edit` and `/template disable`.
 
@@ -284,6 +294,8 @@ Status: implemented in v1.
 * Roles are a fixed set (tank, healer, dps, and participant for events). Templates choose counts per role, not new role names. A new role is a code change *(call)*.
 * Disabling hides a template from choice lists and does not touch existing activities. There is no delete.
 * The initial dungeon and raid list ships as a seed data file based on the original game's content *(call)*.
+
+Status: implemented in v1.
 
 === Epic OP: Operation (supports all epics)
 
