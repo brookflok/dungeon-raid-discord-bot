@@ -1,0 +1,245 @@
+[
+  {
+    "kind": "dungeon",
+    "name": "Ragefire Chasm",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Wailing Caverns",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "The Deadmines",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Shadowfang Keep",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Blackfathom Deeps",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "The Stockade",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Gnomeregan",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Razorfen Kraul",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Scarlet Monastery",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Razorfen Downs",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Uldaman",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Zul'Farrak",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Maraudon",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Sunken Temple",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Blackrock Depths",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Lower Blackrock Spire",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Upper Blackrock Spire",
+    "slots": {
+      "tank": 1,
+      "healer": 2,
+      "dps": 7
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Dire Maul",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Scholomance",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "dungeon",
+    "name": "Stratholme",
+    "slots": {
+      "tank": 1,
+      "healer": 1,
+      "dps": 3
+    }
+  },
+  {
+    "kind": "raid",
+    "name": "Molten Core",
+    "slots": {
+      "tank": 3,
+      "healer": 9,
+      "dps": 28
+    }
+  },
+  {
+    "kind": "raid",
+    "name": "Onyxia's Lair",
+    "slots": {
+      "tank": 3,
+      "healer": 9,
+      "dps": 28
+    }
+  },
+  {
+    "kind": "raid",
+    "name": "Blackwing Lair",
+    "slots": {
+      "tank": 3,
+      "healer": 9,
+      "dps": 28
+    }
+  },
+  {
+    "kind": "raid",
+    "name": "Temple of Ahn'Qiraj",
+    "slots": {
+      "tank": 3,
+      "healer": 9,
+      "dps": 28
+    }
+  },
+  {
+    "kind": "raid",
+    "name": "Naxxramas",
+    "slots": {
+      "tank": 3,
+      "healer": 9,
+      "dps": 28
+    }
+  },
+  {
+    "kind": "raid",
+    "name": "Zul'Gurub",
+    "slots": {
+      "tank": 2,
+      "healer": 5,
+      "dps": 13
+    }
+  },
+  {
+    "kind": "raid",
+    "name": "Ruins of Ahn'Qiraj",
+    "slots": {
+      "tank": 2,
+      "healer": 5,
+      "dps": 13
+    }
+  }
+]

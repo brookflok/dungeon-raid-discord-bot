@@ -118,6 +118,14 @@ export function storageContract(name: string, make: () => Promise<Storage>): voi
         expect(list.map((x) => x.userId)).toEqual(['early', 'mid', 'late']);
       });
 
+      it('keeps insertion order for signups with the same createdAt', async () => {
+        await s.upsertSignup(signup('b', '2026-11-14T10:00:00Z'));
+        await s.upsertSignup(signup('a', '2026-11-14T10:00:00Z'));
+        await s.upsertSignup(signup('c', '2026-11-14T10:00:00Z'));
+        await s.upsertSignup(signup('b', '2026-11-14T10:00:00Z', { label: 'again' }));
+        expect((await s.listSignups('a1')).map((x) => x.userId)).toEqual(['b', 'a', 'c']);
+      });
+
       it('upsert replaces the same user and keeps other activities separate', async () => {
         await s.upsertSignup(signup('u1', '2026-11-14T10:00:00Z'));
         await s.upsertSignup(
@@ -190,6 +198,12 @@ export function storageContract(name: string, make: () => Promise<Storage>): voi
       });
     });
 
+    describe('job edge cases', () => {
+      it('deleteJob on an unknown id does not throw', async () => {
+        await expect(s.deleteJob('999')).resolves.toBeUndefined();
+      });
+    });
+
     describe('templates', () => {
       it('round-trips, updates and filters by kind', async () => {
         expect(await s.getTemplate('t1')).toBeNull();
@@ -252,6 +266,19 @@ export function storageContract(name: string, make: () => Promise<Storage>): voi
         expect((await s.listCharacters('u1')).map((c) => c.id)).toEqual(['c1']);
       });
 
+      it('round-trips characters with all optional fields', async () => {
+        const c: Character = {
+          ...character('c1', 'u1'),
+          blizzardId: 77,
+          surname: 'Stormrage',
+          race: 'Orc',
+          faction: 'Horde',
+          source: 'linked',
+        };
+        await s.saveCharacter(c);
+        expect(await s.listCharacters('u1')).toEqual([c]);
+      });
+
       it('deleteMember removes the member and their characters only', async () => {
         await s.saveMember({ userId: 'u1' });
         await s.saveMember({ userId: 'u2' });
@@ -276,6 +303,17 @@ export function storageContract(name: string, make: () => Promise<Storage>): voi
 
       it('returns null for an unknown token', async () => {
         expect(await s.takeLinkToken('nope', d('2026-11-14T12:00:00Z'))).toBeNull();
+      });
+
+      it('accepts a token exactly at its expiry', async () => {
+        await s.insertLinkToken(token);
+        expect(await s.takeLinkToken('abc', token.expiresAt)).toEqual(token);
+      });
+
+      it('removes an expired token when it is looked up', async () => {
+        await s.insertLinkToken(token);
+        expect(await s.takeLinkToken('abc', d('2026-11-14T12:10:01Z'))).toBeNull();
+        expect(await s.takeLinkToken('abc', d('2026-11-14T12:00:00Z'))).toBeNull();
       });
 
       it('returns null when expired', async () => {
