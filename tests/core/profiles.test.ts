@@ -68,13 +68,13 @@ describe('link tokens', () => {
 });
 
 describe('completeLink', () => {
-  it('stores characters and sets main to the first', async () => {
+  it('stores characters and sets main to the highest level', async () => {
     const chars = await svc.completeLink('u1', 100, [brook, thrall]);
     expect(chars).toHaveLength(2);
     const { member, characters } = await svc.list('u1');
     expect(member?.battleNetId).toBe(100);
     const main = characters.find((c) => c.id === member?.mainCharacterId);
-    expect(main?.name).toBe('Brook');
+    expect(main?.name).toBe('Thrall');
     expect(characters.every((c) => c.source === 'linked')).toBe(true);
   });
 

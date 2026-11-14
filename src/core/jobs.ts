@@ -20,7 +20,7 @@ export function planJobs(a: Activity, now: Date): Omit<Job, 'id'>[] {
     const start = a.time.at.getTime();
     const jobs = a.reminderOffsetsMin
       .map((offset) => start - offset * MINUTE)
-      .filter((at) => at >= now.getTime())
+      .filter((at) => at > now.getTime())
       .map((at) => job('reminder', at));
     jobs.push(job('finish', start + FINISH_AFTER_MS));
     return jobs;

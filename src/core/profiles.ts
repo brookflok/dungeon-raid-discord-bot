@@ -111,7 +111,7 @@ export class ProfileService {
     }
 
     const all = [...existing.filter((c) => !kept.has(c.id) && c.source === 'manual'), ...result];
-    await this.saveWithMain(member, all, result[0] ?? all[0]);
+    await this.saveWithMain(member, all, undefined);
     return result;
   }
 

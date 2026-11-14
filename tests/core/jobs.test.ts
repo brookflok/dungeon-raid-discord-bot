@@ -35,6 +35,13 @@ describe('planJobs', () => {
     ]);
   });
 
+  it('a reminder due exactly now is not planned', () => {
+    const now = new Date(T.getTime() - min(60));
+    expect(
+      planJobs(activity({ time: { type: 'at', at: T }, reminderOffsetsMin: [60] }), now),
+    ).toEqual([{ activityId: 'a1', type: 'finish', dueAt: new Date(T.getTime() + min(180)) }]);
+  });
+
   it('open asap expires 2 hours after creation', () => {
     expect(planJobs(activity({}), created)).toEqual([
       { activityId: 'a1', type: 'expire', dueAt: new Date(created.getTime() + min(120)) },

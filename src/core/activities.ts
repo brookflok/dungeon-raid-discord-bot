@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { planJobs } from './jobs.js';
+import { ASAP_EXPIRY_MS, FLEXIBLE_EXPIRY_MS, planJobs } from './jobs.js';
 import type { Clock, Storage } from './ports.js';
 import {
   UserError,
@@ -206,7 +206,17 @@ export class ActivityService {
   setTime(activityId: string, actor: Actor, time: TimeSpec): Promise<ActivityResult> {
     return this.serialize(async () => {
       const activity = await this.requireManageable(activityId, actor);
-      this.checkTime(activity.kind, time, this.clock.now());
+      const now = this.clock.now();
+      this.checkTime(activity.kind, time, now);
+      if (time.type !== 'at') {
+        // The ASAP and flexible limits count from posting; a passed limit would expire the group.
+        const limit = time.type === 'asap' ? ASAP_EXPIRY_MS : FLEXIBLE_EXPIRY_MS;
+        if (activity.createdAt.getTime() + limit <= now.getTime()) {
+          throw new UserError(
+            'This group was posted too long ago for that. Set a date and time instead.',
+          );
+        }
+      }
       activity.time = time;
       await this.storage.updateActivity(activity);
       return this.finish(activityId, [{ type: 'timeChanged' }]);
@@ -368,7 +378,7 @@ export class ActivityService {
     if (full && activity.state === 'open') {
       activity.state = 'full';
       effects.push({ type: activity.filledAt ? 'refilled' : 'filled' });
-      activity.filledAt ??= this.clock.now();
+      activity.filledAt = this.clock.now();
       await this.storage.updateActivity(activity);
     } else if (!full && activity.state === 'full') {
       activity.state = 'open';

@@ -135,6 +135,40 @@ describe('ActivityService lifecycle', () => {
     ]);
   });
 
+  it('a group that fills again much later finishes 3 hours after the latest fill', async () => {
+    const { activity } = await svc.create({
+      guildId: 'g1',
+      kind: 'dungeon',
+      title: 'SM',
+      starter: { userId: 'u1', label: 'S' },
+      starterRole: 'tank',
+      time: { type: 'flexible' },
+      slots: { tank: 1, healer: 1 },
+      reminderOffsetsMin: [15],
+    });
+    await svc.signUp(activity.id, 'u2', { role: 'healer', label: 'H' });
+    await svc.leave(activity.id, 'u2');
+    const refill = new Date(clock.now().getTime() + min(240));
+    clock.set(refill);
+    await svc.signUp(activity.id, 'u3', { role: 'healer', label: 'H' });
+    for (const job of await storage.dueJobs(clock.now())) await svc.runJob(job);
+    expect((await svc.get(activity.id))!.activity.state).toBe('full');
+    expect(await jobsOf()).toMatchObject([
+      { type: 'finish', dueAt: new Date(refill.getTime() + min(180)) },
+    ]);
+  });
+
+  it('setTime to ASAP or flexible is refused once that limit has passed since posting', async () => {
+    const id = await timedEvent();
+    const tooOld = 'This group was posted too long ago for that. Set a date and time instead.';
+    clock.set(new Date('2026-11-14T14:00:00Z')); // posted 2 hours ago
+    await expect(svc.setTime(id, starter, { type: 'asap' })).rejects.toThrow(tooOld);
+    const r = await svc.setTime(id, starter, { type: 'flexible' });
+    expect(r.activity.time).toEqual({ type: 'flexible' });
+    clock.set(new Date('2026-11-21T12:00:00Z')); // posted 7 days ago
+    await expect(svc.setTime(id, starter, { type: 'flexible' })).rejects.toThrow(tooOld);
+  });
+
   it('setTime on a flexible activity schedules reminders and emits timeChanged', async () => {
     const r0 = await svc.create({
       guildId: 'g1',
@@ -191,6 +225,14 @@ describe('ActivityService lifecycle', () => {
     await svc.signUp(id, 'u3', { role: 'participant', label: 'Q' });
     expect(await jobsOf('reminder')).toMatchObject([{ activityId: id, dueAt: job!.dueAt }]);
     await svc.leave(id, 'u3');
+    expect(await jobsOf('reminder')).toMatchObject([{ activityId: id, dueAt: job!.dueAt }]);
+  });
+
+  it('a signup at the exact reminder time keeps that reminder once', async () => {
+    const id = await timedEvent();
+    const [job] = await jobsOf('reminder');
+    clock.set(job!.dueAt);
+    await svc.signUp(id, 'u3', { role: 'participant', label: 'Q' });
     expect(await jobsOf('reminder')).toMatchObject([{ activityId: id, dueAt: job!.dueAt }]);
   });
 
