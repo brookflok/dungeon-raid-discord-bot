@@ -8,6 +8,7 @@ export class Scheduler {
   private readonly onResult: (r: ActivityResult) => Promise<void>;
   private readonly intervalMs: number;
   private timer: NodeJS.Timeout | undefined;
+  private ticking = false;
 
   constructor(deps: {
     storage: Storage;
@@ -23,16 +24,22 @@ export class Scheduler {
     this.intervalMs = deps.intervalMs ?? 30_000;
   }
 
-  /** Runs every due job once and deletes it; one failing job does not stop the others. */
+  /** Runs every due job once and deletes it; one failing job does not stop the others. Skipped while a tick is running. */
   async tick(): Promise<void> {
-    for (const job of await this.storage.dueJobs(this.clock.now())) {
-      try {
-        const result = await this.activities.runJob(job);
-        if (result) await this.onResult(result);
-      } catch (err) {
-        console.error('Scheduled job failed', job.id, err);
+    if (this.ticking) return;
+    this.ticking = true;
+    try {
+      for (const job of await this.storage.dueJobs(this.clock.now())) {
+        try {
+          const result = await this.activities.runJob(job);
+          if (result) await this.onResult(result);
+        } catch (err) {
+          console.error('Scheduled job failed', job.id, err);
+        }
+        await this.storage.deleteJob(job.id);
       }
-      await this.storage.deleteJob(job.id);
+    } finally {
+      this.ticking = false;
     }
   }
 

@@ -69,12 +69,7 @@ export class ActivityService {
   create(input: CreateActivityInput): Promise<ActivityResult> {
     return this.serialize(async () => {
       const now = this.clock.now();
-      if (input.kind === 'raid' && input.time.type !== 'at') {
-        throw new UserError('A raid needs a date and time.');
-      }
-      if (input.time.type === 'at' && input.time.at < now) {
-        throw new UserError('That time is in the past. Try "today 20:30" or "2026-11-20 19:00".');
-      }
+      this.checkTime(input.kind, input.time, now);
       if (input.kind === 'dungeon') {
         if (!input.starterRole) throw new UserError('Choose a role for yourself.');
         if (input.slots[input.starterRole] === undefined) {
@@ -160,7 +155,7 @@ export class ActivityService {
       }
       await this.storage.upsertSignup(signup);
       await this.refreshState(activity, effects);
-      return this.finish(activityId, effects);
+      return this.finish(activityId, effects, true);
     });
   }
 
@@ -195,7 +190,7 @@ export class ActivityService {
         }
       }
       await this.refreshState(activity, effects);
-      return this.finish(activityId, effects);
+      return this.finish(activityId, effects, true);
     });
   }
 
@@ -211,12 +206,7 @@ export class ActivityService {
   setTime(activityId: string, actor: Actor, time: TimeSpec): Promise<ActivityResult> {
     return this.serialize(async () => {
       const activity = await this.requireManageable(activityId, actor);
-      if (activity.kind === 'raid' && time.type !== 'at') {
-        throw new UserError('A raid needs a date and time.');
-      }
-      if (time.type === 'at' && time.at < this.clock.now()) {
-        throw new UserError('That time is in the past. Try "today 20:30" or "2026-11-20 19:00".');
-      }
+      this.checkTime(activity.kind, time, this.clock.now());
       activity.time = time;
       await this.storage.updateActivity(activity);
       return this.finish(activityId, [{ type: 'timeChanged' }]);
@@ -226,31 +216,36 @@ export class ActivityService {
   /** Carries out a due job. Returns null when there is nothing to announce. */
   runJob(job: Job): Promise<ActivityResult | null> {
     return this.serialize(async () => {
-      const activity = await this.storage.getActivity(job.activityId);
-      if (!activity || (activity.state !== 'open' && activity.state !== 'full')) return null;
-
-      if (job.type === 'reminder') {
-        const overdueMs = this.clock.now().getTime() - job.dueAt.getTime();
-        if (overdueMs > 10 * 60_000 || activity.time.type !== 'at') return null;
-        const signups = await this.storage.listSignups(activity.id);
-        if (!signups.some((s) => s.status === 'confirmed' || s.status === 'tentative')) {
-          return null;
-        }
-        const minutesBefore = Math.round(
-          (activity.time.at.getTime() - job.dueAt.getTime()) / 60_000,
-        );
-        return this.result(activity.id, [{ type: 'reminder', minutesBefore }]);
-      }
-      if (job.type === 'expire') {
-        if (activity.state !== 'open') return null;
-        activity.state = 'expired';
-        await this.storage.updateActivity(activity);
-        return this.finish(activity.id, [{ type: 'closed', reason: 'expired' }]);
-      }
-      activity.state = 'finished';
-      await this.storage.updateActivity(activity);
-      return this.finish(activity.id, [{ type: 'closed', reason: 'finished' }]);
+      const result = await this.execute(job);
+      await this.storage.deleteJob(job.id);
+      return result;
     });
+  }
+
+  private async execute(job: Job): Promise<ActivityResult | null> {
+    const activity = await this.storage.getActivity(job.activityId);
+    if (!activity || (activity.state !== 'open' && activity.state !== 'full')) return null;
+
+    if (job.type === 'reminder') {
+      const overdueMs = this.clock.now().getTime() - job.dueAt.getTime();
+      if (overdueMs > 10 * 60_000 || activity.time.type !== 'at') return null;
+      const minutesBefore = Math.round((activity.time.at.getTime() - job.dueAt.getTime()) / 60_000);
+      if (!activity.reminderOffsetsMin.includes(minutesBefore)) return null;
+      const signups = await this.storage.listSignups(activity.id);
+      if (!signups.some((s) => s.status === 'confirmed' || s.status === 'tentative')) {
+        return null;
+      }
+      return this.result(activity.id, [{ type: 'reminder', minutesBefore }]);
+    }
+    if (job.type === 'expire') {
+      if (activity.state !== 'open' || activity.time.type === 'at') return null;
+      activity.state = 'expired';
+      await this.storage.updateActivity(activity);
+      return this.finish(activity.id, [{ type: 'closed', reason: 'expired' }]);
+    }
+    activity.state = 'finished';
+    await this.storage.updateActivity(activity);
+    return this.finish(activity.id, [{ type: 'closed', reason: 'finished' }]);
   }
 
   setPost(activityId: string, post: { channelId: string; messageId: string }): Promise<void> {
@@ -279,6 +274,15 @@ export class ActivityService {
     return activity;
   }
 
+  private checkTime(kind: Kind, time: TimeSpec, now: Date): void {
+    if (kind === 'raid' && time.type !== 'at') {
+      throw new UserError('A raid needs a date and time.');
+    }
+    if (time.type === 'at' && time.at < now) {
+      throw new UserError('That time is in the past. Try "today 20:30" or "2026-11-20 19:00".');
+    }
+  }
+
   private async requireManageable(activityId: string, actor: Actor): Promise<Activity> {
     const activity = await this.requireActivity(activityId);
     if (actor.userId !== activity.starterId && !actor.isOfficer) {
@@ -289,9 +293,24 @@ export class ActivityService {
   }
 
   /** Re-plans the activity's jobs from its stored state, then builds the result. */
-  private async finish(activityId: string, effects: Effect[]): Promise<ActivityResult> {
+  private async finish(
+    activityId: string,
+    effects: Effect[],
+    keepDueReminders = false,
+  ): Promise<ActivityResult> {
     const activity = (await this.storage.getActivity(activityId))!;
-    await this.storage.replaceJobs(activityId, planJobs(activity, this.clock.now()));
+    const now = this.clock.now();
+    const jobs = planJobs(activity, now);
+    if (keepDueReminders && (activity.state === 'open' || activity.state === 'full')) {
+      // Reminders that came due but have not run yet must not be lost by a replan.
+      const due = await this.storage.dueJobs(now);
+      for (const j of due) {
+        if (j.activityId === activityId && j.type === 'reminder') {
+          jobs.push({ activityId, type: 'reminder', dueAt: j.dueAt });
+        }
+      }
+    }
+    await this.storage.replaceJobs(activityId, jobs);
     return this.result(activityId, effects);
   }
 

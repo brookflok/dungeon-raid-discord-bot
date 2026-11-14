@@ -183,4 +183,38 @@ describe('ActivityService lifecycle', () => {
       'This group is closed.',
     );
   });
+
+  it('a due reminder survives a signup or leave before the next tick', async () => {
+    const id = await timedEvent();
+    const [job] = await jobsOf('reminder');
+    clock.set(new Date(job!.dueAt.getTime() + min(1)));
+    await svc.signUp(id, 'u3', { role: 'participant', label: 'Q' });
+    expect(await jobsOf('reminder')).toMatchObject([{ activityId: id, dueAt: job!.dueAt }]);
+    await svc.leave(id, 'u3');
+    expect(await jobsOf('reminder')).toMatchObject([{ activityId: id, dueAt: job!.dueAt }]);
+  });
+
+  it('runJob deletes the job it ran', async () => {
+    await timedEvent();
+    const [job] = await jobsOf('reminder');
+    clock.set(job!.dueAt);
+    await svc.runJob(job!);
+    expect(await jobsOf('reminder')).toEqual([]);
+  });
+
+  it('a reminder whose offset is not on the activity is ignored', async () => {
+    await timedEvent();
+    const [job] = await jobsOf('reminder');
+    const stale = { ...job!, dueAt: new Date(job!.dueAt.getTime() - min(5)) };
+    clock.set(stale.dueAt);
+    expect(await svc.runJob(stale)).toBeNull();
+  });
+
+  it('an expire job on a timed activity is ignored', async () => {
+    const id = await timedEvent();
+    clock.set(FAR);
+    const r = await svc.runJob({ id: 'x', activityId: id, type: 'expire', dueAt: START });
+    expect(r).toBeNull();
+    expect((await svc.get(id))!.activity.state).toBe('open');
+  });
 });
