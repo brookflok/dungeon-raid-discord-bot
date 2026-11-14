@@ -104,4 +104,26 @@ describe('Scheduler', () => {
     await Promise.all([first, second]);
     expect(results).toHaveLength(1);
   });
+
+  it('stop resolves only after the running tick has finished', async () => {
+    const { clock, scheduler, results, createTimed, hold } = setup();
+    await createTimed();
+    clock.current = new Date('2026-11-20T17:46:00Z');
+    let release!: () => void;
+    hold.gate = new Promise<void>((r) => (release = r));
+    const tick = scheduler.tick();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(results).toHaveLength(1);
+    let stopped = false;
+    const stop = (async () => {
+      await scheduler.stop();
+      stopped = true;
+    })();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(stopped).toBe(false);
+    release();
+    await stop;
+    expect(stopped).toBe(true);
+    await tick;
+  });
 });

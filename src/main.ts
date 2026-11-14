@@ -76,7 +76,8 @@ web.listen(env.PORT, () => log.info('Web server listening', { port: env.PORT }))
 
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
   log.info('Shutting down', { signal });
-  scheduler.stop();
+  // A running tick finishes first, so a reminder it has taken is still delivered.
+  await scheduler.stop();
   await new Promise<void>((resolve) => web.close(() => resolve()));
   await client.destroy();
   storage.close();
