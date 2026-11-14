@@ -4,9 +4,10 @@ import { actorOf, type BotModule } from '../discord/registry.js';
 import {
   ROLE_CHOICES,
   cancelSubcommand,
-  messageIdFromLink,
-  postLink,
+  manageTarget,
+  publishNew,
   requireChannel,
+  resolveTemplateOption,
   resolveTimeOption,
   respondTemplates,
   starterLabel,
@@ -50,41 +51,27 @@ export const dungeons: BotModule = {
 
   async onCommand(i, s) {
     await i.deferReply({ flags: MessageFlags.Ephemeral });
-    const guildId = i.guildId!; // guild-only command
-    const config = await s.config.get(guildId);
-    const sub = i.options.getSubcommand();
-
-    if (sub === 'start') {
-      requireChannel(config, 'dungeon');
-      const time = resolveTimeOption(i.options.getString('when'), s.clock.now(), config.timezone);
-      const dungeon = await s.templates.resolve(i.options.getString('dungeon', true));
-      const result = await s.activities.create({
-        guildId,
-        kind: 'dungeon',
-        title: dungeon.title,
-        starter: { userId: i.user.id, label: await starterLabel(i, s) },
-        starterRole: i.options.getString('role', true) as Role,
-        time,
-        slots: dungeon.slots,
-        reminderOffsetsMin: dungeon.reminderOffsetsMin,
-      });
-      await s.publish(result);
-      const posted = await s.activities.get(result.activity.id);
-      await i.editReply(`Your group is posted: ${postLink(posted!.activity)}`);
+    if (i.options.getSubcommand() !== 'start') {
+      await manageTarget(i, s, 'dungeon', await actorOf(i, s));
       return;
     }
 
-    const actor = await actorOf(i, s);
-    const messageId = messageIdFromLink(i.options.getString('post'));
-    const target = await s.activities.findTarget(guildId, 'dungeon', actor.userId, messageId);
-    if (sub === 'cancel') {
-      await s.publish(await s.activities.cancel(target.id, actor));
-      await i.editReply('The group is cancelled.');
-    } else {
-      const when = i.options.getString('when', true);
-      const time = resolveTimeOption(when, s.clock.now(), config.timezone);
-      await s.publish(await s.activities.setTime(target.id, actor, time));
-      await i.editReply('The new time is set.');
-    }
+    const guildId = i.guildId!; // guild-only command
+    const config = await s.config.get(guildId);
+    requireChannel(config, 'dungeon');
+    const time = resolveTimeOption(i.options.getString('when'), s.clock.now(), config.timezone);
+    const id = i.options.getString('dungeon', true);
+    const dungeon = await resolveTemplateOption(s, guildId, 'dungeon', id);
+    const result = await s.activities.create({
+      guildId,
+      kind: 'dungeon',
+      title: dungeon.title,
+      starter: { userId: i.user.id, label: await starterLabel(i, s) },
+      starterRole: i.options.getString('role', true) as Role,
+      time,
+      slots: dungeon.slots,
+      reminderOffsetsMin: dungeon.reminderOffsetsMin,
+    });
+    await i.editReply(`Your group is posted: ${await publishNew(s, result)}`);
   },
 };

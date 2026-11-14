@@ -4,9 +4,10 @@ import { actorOf, type BotModule } from '../discord/registry.js';
 import {
   ROLE_CHOICES,
   cancelSubcommand,
-  messageIdFromLink,
-  postLink,
+  manageTarget,
+  publishNew,
   requireChannel,
+  resolveTemplateOption,
   resolveTimeOption,
   respondTemplates,
   starterLabel,
@@ -47,49 +48,35 @@ export const raids: BotModule = {
     await i.deferReply({ flags: MessageFlags.Ephemeral });
     const actor = await actorOf(i, s);
     if (!actor.isOfficer) throw new UserError('Only officers can post raids.');
-    const guildId = i.guildId!; // guild-only command
-    const config = await s.config.get(guildId);
-    const sub = i.options.getSubcommand();
-
-    if (sub === 'post') {
-      requireChannel(config, 'raid');
-      const when = i.options.getString('when', true);
-      const time = resolveTimeOption(when, s.clock.now(), config.timezone);
-      const role = i.options.getString('signup') as Role | null;
-      const raid = await s.templates.resolve(i.options.getString('raid', true));
-      // Checked before creating, so a failed signup never leaves a raid without a post.
-      if (role && raid.slots[role] === undefined) {
-        throw new UserError('That role is not part of this raid.');
-      }
-      const label = await starterLabel(i, s);
-      let result = await s.activities.create({
-        guildId,
-        kind: 'raid',
-        title: raid.title,
-        starter: { userId: actor.userId, label },
-        time,
-        slots: raid.slots,
-        reminderOffsetsMin: raid.reminderOffsetsMin,
-      });
-      if (role) {
-        result = await s.activities.signUp(result.activity.id, actor.userId, { role, label });
-      }
-      await s.publish(result);
-      const posted = await s.activities.get(result.activity.id);
-      await i.editReply(`Your raid is posted: ${postLink(posted!.activity)}`);
+    if (i.options.getSubcommand() !== 'post') {
+      await manageTarget(i, s, 'raid', actor);
       return;
     }
 
-    const messageId = messageIdFromLink(i.options.getString('post'));
-    const target = await s.activities.findTarget(guildId, 'raid', actor.userId, messageId);
-    if (sub === 'cancel') {
-      await s.publish(await s.activities.cancel(target.id, actor));
-      await i.editReply('The raid is cancelled.');
-    } else {
-      const when = i.options.getString('when', true);
-      const time = resolveTimeOption(when, s.clock.now(), config.timezone);
-      await s.publish(await s.activities.setTime(target.id, actor, time));
-      await i.editReply('The new time is set.');
+    const guildId = i.guildId!; // guild-only command
+    const config = await s.config.get(guildId);
+    requireChannel(config, 'raid');
+    const when = i.options.getString('when', true);
+    const time = resolveTimeOption(when, s.clock.now(), config.timezone);
+    const role = i.options.getString('signup') as Role | null;
+    const raid = await resolveTemplateOption(s, guildId, 'raid', i.options.getString('raid', true));
+    // Checked before creating, so a failed signup never leaves a raid without a post.
+    if (role && raid.slots[role] === undefined) {
+      throw new UserError('That role is not part of this raid.');
     }
+    const label = await starterLabel(i, s);
+    let result = await s.activities.create({
+      guildId,
+      kind: 'raid',
+      title: raid.title,
+      starter: { userId: actor.userId, label },
+      time,
+      slots: raid.slots,
+      reminderOffsetsMin: raid.reminderOffsetsMin,
+    });
+    if (role) {
+      result = await s.activities.signUp(result.activity.id, actor.userId, { role, label });
+    }
+    await i.editReply(`Your raid is posted: ${await publishNew(s, result)}`);
   },
 };

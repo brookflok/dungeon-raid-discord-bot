@@ -1,10 +1,13 @@
 import type {
   AutocompleteInteraction,
   BaseInteraction,
+  ChatInputCommandInteraction,
   SlashCommandStringOption,
   SlashCommandSubcommandBuilder,
 } from 'discord.js';
+import type { ActivityResult, Actor } from '../core/activities.js';
 import { characterLabel } from '../core/profiles.js';
+import type { TemplateService } from '../core/templates.js';
 import { parseTime } from '../core/time.js';
 import {
   UserError,
@@ -68,6 +71,58 @@ export function messageIdFromLink(link: string | null): string | undefined {
 export function postLink(a: Activity): string {
   if (!a.channelId || !a.messageId) throw new Error(`activity ${a.id} has no post`);
   return `https://discord.com/channels/${a.guildId}/${a.channelId}/${a.messageId}`;
+}
+
+/**
+ * Publishes a new activity and returns the link to its post. When the post could not be sent,
+ * the activity is cancelled (not published again) so none is left without a post.
+ */
+export async function publishNew(s: Services, result: ActivityResult): Promise<string> {
+  await s.publish(result);
+  const { activity } = (await s.activities.get(result.activity.id))!;
+  if (!activity.messageId) {
+    // The caller just started it, and the starter may always cancel.
+    await s.activities.cancel(activity.id, { userId: activity.starterId, isOfficer: false });
+    throw new UserError(
+      'I could not post in the channel. An officer should check that I can send messages there.',
+    );
+  }
+  return postLink(activity);
+}
+
+/** The template picked from the autocomplete list; typed text or another kind is rejected. */
+export async function resolveTemplateOption(
+  s: Services,
+  guildId: string,
+  kind: 'dungeon' | 'raid',
+  id: string,
+): ReturnType<TemplateService['resolve']> {
+  const listed = await s.templates.list(guildId, kind);
+  if (!listed.some((t) => t.id === id)) {
+    throw new UserError(`Pick a ${kind} from the list that appears while you type.`);
+  }
+  return s.templates.resolve(id);
+}
+
+/** `cancel` and `time`: the linked post, or the caller's most recent open one of that kind. */
+export async function manageTarget(
+  i: ChatInputCommandInteraction,
+  s: Services,
+  kind: Kind,
+  actor: Actor,
+): Promise<void> {
+  const guildId = i.guildId!; // guild-only commands
+  const messageId = messageIdFromLink(i.options.getString('post'));
+  const target = await s.activities.findTarget(guildId, kind, actor.userId, messageId);
+  if (i.options.getSubcommand() === 'cancel') {
+    await s.publish(await s.activities.cancel(target.id, actor));
+    await i.editReply(`The ${kind === 'dungeon' ? 'group' : kind} is cancelled.`);
+  } else {
+    const { timezone } = await s.config.get(guildId);
+    const time = resolveTimeOption(i.options.getString('when', true), s.clock.now(), timezone);
+    await s.publish(await s.activities.setTime(target.id, actor, time));
+    await i.editReply('The new time is set.');
+  }
 }
 
 /** Checked before creating an activity, so a missing channel never leaves one without a post. */

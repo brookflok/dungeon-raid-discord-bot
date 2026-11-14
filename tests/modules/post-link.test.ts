@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { ActivityService, type ActivityResult } from '../../src/core/activities.js';
 import type { Activity } from '../../src/core/types.js';
 import { UserError } from '../../src/core/types.js';
-import { messageIdFromLink, postLink } from '../../src/modules/shared-options.js';
+import type { Services } from '../../src/discord/registry.js';
+import { messageIdFromLink, postLink, publishNew } from '../../src/modules/shared-options.js';
+import { MemoryStorage } from '../../src/storage/memory.js';
 
 describe('messageIdFromLink', () => {
   it('returns undefined when no link was given', () => {
@@ -28,5 +31,55 @@ describe('postLink', () => {
 
   it('throws when the activity has no post', () => {
     expect(() => postLink({ ...activity, messageId: undefined })).toThrow();
+  });
+});
+
+describe('publishNew', () => {
+  let activities: ActivityService;
+  let published: string[];
+  beforeEach(() => {
+    activities = new ActivityService({
+      storage: new MemoryStorage(),
+      clock: { now: () => new Date('2026-11-14T12:00:00Z') },
+    });
+    published = [];
+  });
+
+  /** Services whose publisher records each call and stores a post only when `sends`. */
+  const services = (sends: boolean) =>
+    ({
+      activities,
+      publish: async (r: ActivityResult) => {
+        published.push(r.activity.id);
+        if (sends) await activities.setPost(r.activity.id, { channelId: 'c1', messageId: 'm1' });
+      },
+    }) as unknown as Services;
+
+  const create = () =>
+    activities.create({
+      guildId: 'g1',
+      kind: 'event',
+      title: 'Party',
+      starter: { userId: 'u1', label: 'U' },
+      time: { type: 'asap' },
+      slots: { participant: null },
+      reminderOffsetsMin: [60],
+    });
+
+  it('publishes the activity and returns the link to its post', async () => {
+    const result = await create();
+    expect(await publishNew(services(true), result)).toBe('https://discord.com/channels/g1/c1/m1');
+    expect(published).toEqual([result.activity.id]);
+  });
+
+  it('cancels the activity without publishing again when the post could not be sent', async () => {
+    const result = await create();
+    const err = await publishNew(services(false), result).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UserError);
+    expect((err as UserError).message).toBe(
+      'I could not post in the channel. An officer should check that I can send messages there.',
+    );
+    expect((await activities.get(result.activity.id))!.activity.state).toBe('cancelled');
+    expect(published).toEqual([result.activity.id]);
   });
 });

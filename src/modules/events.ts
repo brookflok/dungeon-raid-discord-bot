@@ -11,8 +11,8 @@ import { UserError } from '../core/types.js';
 import { actorOf, type BotModule } from '../discord/registry.js';
 import {
   cancelSubcommand,
-  messageIdFromLink,
-  postLink,
+  manageTarget,
+  publishNew,
   requireChannel,
   resolveTimeOption,
   starterLabel,
@@ -61,26 +61,13 @@ export const events: BotModule = {
   ],
 
   async onCommand(i, s) {
-    const sub = i.options.getSubcommand();
-    if (sub === 'post') {
+    if (i.options.getSubcommand() === 'post') {
       await i.showModal(FORM); // the acknowledgement; the rest happens in onModal
       return;
     }
 
     await i.deferReply({ flags: MessageFlags.Ephemeral });
-    const guildId = i.guildId!; // guild-only command
-    const actor = await actorOf(i, s);
-    const messageId = messageIdFromLink(i.options.getString('post'));
-    const target = await s.activities.findTarget(guildId, 'event', actor.userId, messageId);
-    if (sub === 'cancel') {
-      await s.publish(await s.activities.cancel(target.id, actor));
-      await i.editReply('The event is cancelled.');
-    } else {
-      const { timezone } = await s.config.get(guildId);
-      const time = resolveTimeOption(i.options.getString('when', true), s.clock.now(), timezone);
-      await s.publish(await s.activities.setTime(target.id, actor, time));
-      await i.editReply('The new time is set.');
-    }
+    await manageTarget(i, s, 'event', await actorOf(i, s));
   },
 
   async onModal(i, s) {
@@ -109,8 +96,6 @@ export const events: BotModule = {
       slots: { participant: max ? Number(max) : null },
       reminderOffsetsMin: config.reminders.event,
     });
-    await s.publish(result);
-    const posted = await s.activities.get(result.activity.id);
-    await i.editReply(`Your event is posted: ${postLink(posted!.activity)}`);
+    await i.editReply(`Your event is posted: ${await publishNew(s, result)}`);
   },
 };
