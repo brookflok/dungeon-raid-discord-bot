@@ -228,7 +228,9 @@ export const admin: BotModule = {
             .setName('add')
             .setDescription('Add a template')
             .addStringOption(kindOption(TEMPLATE_KINDS))
-            .addStringOption((o) => o.setName('name').setDescription('Name').setRequired(true)),
+            .addStringOption((o) =>
+              o.setName('name').setDescription('Name').setRequired(true).setMaxLength(100),
+            ),
           true,
         ).addStringOption(remindersOption),
       )
@@ -238,7 +240,7 @@ export const admin: BotModule = {
             .setName('edit')
             .setDescription('Change a template')
             .addStringOption(templateOption)
-            .addStringOption((o) => o.setName('name').setDescription('New name')),
+            .addStringOption((o) => o.setName('name').setDescription('New name').setMaxLength(100)),
           false,
         ).addStringOption(remindersOption),
       )

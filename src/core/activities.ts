@@ -72,7 +72,7 @@ export class ActivityService {
       this.checkTime(input.kind, input.time, now);
       if (input.kind === 'dungeon') {
         if (!input.starterRole) throw new UserError('Choose a role for yourself.');
-        if (input.slots[input.starterRole] === undefined) {
+        if (!input.slots[input.starterRole]) {
           throw new UserError('That role is not part of this group.');
         }
       }

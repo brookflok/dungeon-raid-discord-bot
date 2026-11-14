@@ -16,10 +16,11 @@ describe('seed/templates.json', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('seeds every entry into storage without error', async () => {
+  it('seeds every entry into an empty guild; a second seed adds nothing', async () => {
     const storage = new MemoryStorage();
     const service = new TemplateService(storage, new ConfigService(storage));
     expect(await service.seed('g1', entries)).toBe(entries.length);
     expect(await service.seed('g1', entries)).toBe(0);
+    expect(await storage.listTemplates('g1')).toHaveLength(entries.length);
   });
 });

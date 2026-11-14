@@ -172,6 +172,21 @@ describe('ActivityService signups', () => {
     await expect(join(activity.id, 'u2', tank)).rejects.toThrow(UserError);
   });
 
+  it('a dungeon starter cannot take a role with no slots', async () => {
+    await expect(
+      svc.create({
+        guildId: 'g1',
+        kind: 'dungeon',
+        title: 'Pair',
+        starter: { userId: 'u1', label: 'Starter' },
+        starterRole: 'healer',
+        time: { type: 'asap' },
+        slots: { tank: 1, healer: 0, dps: 1 },
+        reminderOffsetsMin: [15],
+      }),
+    ).rejects.toThrow('That role is not part of this group.');
+  });
+
   it('raid without a time is rejected', async () => {
     await expect(other('raid', 'asap', { tank: 1 })).rejects.toThrow(UserError);
   });

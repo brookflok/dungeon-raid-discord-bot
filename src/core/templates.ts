@@ -20,6 +20,11 @@ function assertSlots(slots: Slots): void {
   }
 }
 
+/** A role with 0 slots is not part of the group, so it is not stored. */
+function withoutEmpty(slots: Slots): Slots {
+  return Object.fromEntries(Object.entries(slots).filter(([, n]) => n !== 0)) as Slots;
+}
+
 export class TemplateService {
   constructor(
     private storage: Storage,
@@ -54,7 +59,12 @@ export class TemplateService {
     assertSlots(input.slots);
     if (input.reminderOffsetsMin) assertOffsets(input.reminderOffsetsMin);
     await this.assertNameFree(input.guildId, input.kind, input.name);
-    const t: Template = { id: randomUUID(), enabled: true, ...input };
+    const t: Template = {
+      id: randomUUID(),
+      enabled: true,
+      ...input,
+      slots: withoutEmpty(input.slots),
+    };
     await this.storage.insertTemplate(t);
     return t;
   }
@@ -68,6 +78,7 @@ export class TemplateService {
     if (patch.reminderOffsetsMin) assertOffsets(patch.reminderOffsetsMin);
     if (patch.name !== undefined) await this.assertNameFree(t.guildId, t.kind, patch.name, id);
     const next = { ...t, ...patch };
+    if (patch.slots) next.slots = withoutEmpty(patch.slots);
     await this.storage.updateTemplate(next);
     return next;
   }
@@ -105,13 +116,10 @@ export class TemplateService {
     guildId: string,
     templates: { kind: 'dungeon' | 'raid'; name: string; slots: Slots }[],
   ): Promise<number> {
-    let added = 0;
-    for (const t of templates) {
-      const existing = await this.storage.listTemplates(guildId, t.kind);
-      if (existing.some((e) => e.name === t.name)) continue;
-      await this.add({ guildId, ...t });
-      added++;
-    }
-    return added;
+    // Only a guild without any template is seeded, so a seeded template that officers renamed
+    // or disabled is never added again.
+    if ((await this.storage.listTemplates(guildId)).length > 0) return 0;
+    for (const t of templates) await this.add({ guildId, ...t });
+    return templates.length;
   }
 }

@@ -98,15 +98,45 @@ describe('TemplateService', () => {
     await expect(templates.edit('nope', { name: 'X' })).rejects.toBeInstanceOf(UserError);
   });
 
-  it('seed run twice adds each name once', async () => {
+  it('stores slots without zero-count roles on add, edit and seed', async () => {
     const { templates } = setup();
-    const seeds = [
-      { kind: 'dungeon' as const, name: 'Deadmines', slots },
-      { kind: 'raid' as const, name: 'Molten Core', slots: { tank: 2, healer: 8, dps: 30 } },
-    ];
+    const pair = { tank: 1, healer: 0, dps: 1 };
+    const a = await templates.add({ guildId: 'g', kind: 'dungeon', name: 'A', slots: pair });
+    expect(a.slots).toEqual({ tank: 1, dps: 1 });
+    const b = await templates.add({ guildId: 'g', kind: 'dungeon', name: 'B', slots });
+    const edited = await templates.edit(b.id, { slots: { tank: 1, healer: 0, dps: 2 } });
+    expect(edited.slots).toEqual({ tank: 1, dps: 2 });
+    expect((await templates.list('g', 'dungeon')).map((t) => t.slots)).toEqual([
+      { tank: 1, dps: 1 },
+      { tank: 1, dps: 2 },
+    ]);
+    await templates.seed('g2', [{ kind: 'dungeon', name: 'C', slots: pair }]);
+    expect((await templates.list('g2', 'dungeon')).map((t) => t.slots)).toEqual([
+      { tank: 1, dps: 1 },
+    ]);
+  });
+
+  const seeds = [
+    { kind: 'dungeon' as const, name: 'Deadmines', slots },
+    { kind: 'raid' as const, name: 'Molten Core', slots: { tank: 2, healer: 8, dps: 30 } },
+  ];
+
+  it('a second seed adds nothing, even after a seeded template was renamed', async () => {
+    const { templates } = setup();
     expect(await templates.seed('g', seeds)).toBe(2);
+    const [deadmines] = await templates.list('g', 'dungeon');
+    await templates.edit(deadmines!.id, { name: 'The Deadmines' });
     expect(await templates.seed('g', seeds)).toBe(0);
-    expect(await templates.list('g', 'dungeon')).toHaveLength(1);
-    expect(await templates.list('g', 'raid')).toHaveLength(1);
+    expect((await templates.listAll('g', 'dungeon')).map((t) => t.name)).toEqual(['The Deadmines']);
+    expect(await templates.listAll('g', 'raid')).toHaveLength(1);
+  });
+
+  it('seed adds nothing when the guild has any template, even a disabled one', async () => {
+    const { templates } = setup();
+    const own = await templates.add({ guildId: 'g', kind: 'raid', name: 'Own', slots });
+    await templates.setEnabled(own.id, false);
+    expect(await templates.seed('g', seeds)).toBe(0);
+    expect(await templates.listAll('g', 'dungeon')).toEqual([]);
+    expect((await templates.listAll('g', 'raid')).map((t) => t.name)).toEqual(['Own']);
   });
 });
