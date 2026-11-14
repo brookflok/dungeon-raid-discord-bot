@@ -36,7 +36,7 @@ The full list is the product backlog in [req42 section 4](../requirements/req42.
 
 ## 2. Architecture Constraints
 
-- Node.js 24 or newer, TypeScript (strict, ESM with NodeNext), discord.js 14, better-sqlite3, luxon, zod, Vitest, Docker, GitHub Actions. ESLint and Prettier for style *(call)*.
+- Technology stack *(call)*: TypeScript on Node.js, discord.js, SQLite, Vitest, ESLint and Prettier, Docker, GitHub Actions. This is the designer's choice, not a constraint from the owner. The implementation plan fixes the details: Node.js 24 or newer, TypeScript strict, ESM with NodeNext, discord.js 14, better-sqlite3, luxon, zod.
 - `src/core` imports no Discord, database or HTTP library and no other `src/` folder. A module in `src/modules` never imports another module.
 - The bot speaks English only. There is no translation layer.
 - The Forever character lookup is unofficial and may change (see section 3). Group finding must not depend on it.
@@ -136,61 +136,69 @@ The core emits these **effects**: `filled`, `refilled`, `promoted`, `starterChan
 
 ### Level 2: files
 
-File and folder names inside the layers are the builder's choice; this is the plan and is updated when the code changes.
+This is the planned file structure. Paths are relative to the repository root.
 
 ```mermaid
 flowchart LR
     subgraph core[src/core]
-      types[types and roles]
-      activity[activity service]
-      templates[template service]
-      profilesrules[profile service]
-      lifecycle[lifecycle and expiry]
-      reminders[reminder planning]
-      perms[permissions]
-      ifaces[interfaces: storage, clock, character source]
-      errors[UserError]
+      types[types.ts]
+      ports[ports.ts]
+      time[time.ts]
+      config[config.ts]
+      templates[templates.ts]
+      activities[activities.ts]
+      jobs[jobs.ts]
+      profiles[profiles.ts]
     end
     subgraph modules[src/modules]
-      dungeons
-      raids
-      events
-      profiles
-      admin
+      mods[dungeons, raids, events, profiles, admin]
     end
     subgraph discord[src/discord]
-      registry
-      render
-      effects
-      signupbuttons[signup-buttons]
+      registry[registry.ts]
+      render[render.ts]
+      effects[effects.ts]
+      signup[signup-buttons.ts]
     end
     subgraph storage[src/storage]
-      memory
-      sqlite
+      memory[memory.ts]
+      sqlite[sqlite.ts]
     end
-    registry --> modules
-    modules --> core
+    registry --> mods
+    mods --> core
+    signup --> core
     effects --> render
-    signupbuttons --> registry
-    memory -. implements .-> ifaces
-    sqlite -. implements .-> ifaces
+    signup -. registered in .-> registry
+    memory -. implements .-> ports
+    sqlite -. implements .-> ports
 ```
 
-| Block | Content |
+| File | Responsibility |
 |---|---|
-| core: activity service | Create activity, join, leave, switch role, set tentative or can't come, cancel, change time, hand over starter. Returns effects. |
-| core: lifecycle and expiry | State changes open, full, finished, cancelled, expired. ASAP limit 2 hours, flexible limit 7 days, finished 3 hours after start (or after full if no time). |
-| core: reminder planning | Chooses offsets (kind default, template override, copied onto the activity when posted) and the rows to schedule. Skips reminders more than 10 minutes overdue. |
-| core: template service | Add, edit, disable templates. Roles come from the fixed set. |
-| core: profile service | Link results, manual characters, merge rules, main character, removal. Uses the character source interface. |
-| core: permissions | Who is an officer (configured roles, or server administrator). |
-| core: errors | `UserError`: an error whose message a member should see. |
-| discord: registry | Collects commands, button handlers and post layouts from modules. A new module is one registration line. |
-| discord: render | Builds post content from stored state, so a failed edit can be retried. |
-| discord: effects | Turns each effect into posts, thread creation and reuse, mentions and direct messages. |
-| discord: signup-buttons | The shared role, leave, tentative and join buttons used by dungeons, raids and events. |
-| storage: memory | In-memory implementation for tests. |
-| storage: sqlite | SQLite implementation with migrations, transactions per activity, and the due-rows table for the scheduler. |
+| `src/env.ts` | Reads and validates environment variables at startup. |
+| `src/main.ts` | Wiring: creates the parts and starts them. |
+| `src/core/types.ts` | Domain types and `UserError`. |
+| `src/core/ports.ts` | `Storage` and `Clock` interfaces (and the character source) that the core needs. |
+| `src/core/time.ts` | `parseTime`: typed time input in the guild timezone. |
+| `src/core/config.ts` | `ConfigService`: settings and the officer rule. |
+| `src/core/templates.ts` | `TemplateService`: add, edit, disable templates. |
+| `src/core/activities.ts` | `ActivityService`: signups, waitlist, lifecycle; returns effects. |
+| `src/core/jobs.ts` | `planJobs`: plans reminder and closing jobs. |
+| `src/core/profiles.ts` | `ProfileService`: link results, manual characters, main character, removal. |
+| `src/storage/memory.ts` | In-memory `Storage` for tests. |
+| `src/storage/sqlite.ts` | SQLite `Storage`. |
+| `src/storage/migrations/001_init.sql` | First database migration. |
+| `src/scheduler.ts` | 30-second loop over due jobs. |
+| `src/discord/registry.ts` | `BotModule` interface and routing of commands, buttons, menus and forms. |
+| `src/discord/render.ts` | Turns an activity into a message payload. |
+| `src/discord/effects.ts` | Applies effects: re-render, thread, direct messages. |
+| `src/discord/signup-buttons.ts` | Shared handler for the buttons on every activity post. |
+| `src/modules/{dungeons,raids,events,profiles,admin}.ts` | Feature modules: commands, handlers and post layout. |
+| `src/blizzard/client.ts` | OAuth exchange and Forever character lookup. |
+| `src/web/server.ts` | The two routes `/link/:token` and `/callback`. |
+| `seed/templates.json` | Initial dungeons and raids. |
+| `docs/operations.md` | Deploy, backup and manual test checklist. |
+
+`src/discord/signup-buttons.ts` is itself a registered module-style handler (custom-id prefix `act`). It lives in the Discord layer and handles the buttons on every activity post. The feature modules in `src/modules` do not import it, and it does not import them, so there is no dependency cycle: the modules and `signup-buttons.ts` are independent siblings that both register with `registry.ts`.
 
 ## 6. Runtime View
 
