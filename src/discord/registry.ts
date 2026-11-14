@@ -15,6 +15,7 @@ import type { ProfileService } from '../core/profiles.js';
 import type { TemplateService } from '../core/templates.js';
 import { UserError } from '../core/types.js';
 import type { Env } from '../env.js';
+import { log } from '../log.js';
 
 export interface Services {
   activities: ActivityService;
@@ -64,7 +65,7 @@ export function createRouter(modules: BotModule[], s: Services): (i: Interaction
         await byName.get(module)?.onModal?.(i, s, args);
       }
     } catch (err) {
-      if (!(err instanceof UserError)) console.error('interaction failed', err);
+      if (!(err instanceof UserError)) log.error('interaction failed', { err });
       if (!i.isRepliable()) return;
       const reply = {
         content: err instanceof UserError ? err.message : 'Something went wrong.',
@@ -73,7 +74,7 @@ export function createRouter(modules: BotModule[], s: Services): (i: Interaction
       try {
         await (i.deferred || i.replied ? i.followUp(reply) : i.reply(reply));
       } catch (replyErr) {
-        console.error('interaction error reply failed', replyErr);
+        log.error('interaction error reply failed', { err: replyErr });
       }
     }
   };

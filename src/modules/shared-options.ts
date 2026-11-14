@@ -17,6 +17,7 @@ import {
   type TimeSpec,
 } from '../core/types.js';
 import type { Services } from '../discord/registry.js';
+import { log } from '../log.js';
 
 const WHEN = 'today 20:30, tomorrow 19:00, 2026-11-20 19:00, asap or flexible';
 const LINK = /\/channels\/\d+\/\d+\/(\d+)\/?$/;
@@ -153,7 +154,7 @@ export async function respondTemplates(
       .slice(0, 25)
       .map((t) => ({ name: t.name.slice(0, 100), value: t.id }));
   } catch (err) {
-    console.error('autocomplete failed', err);
+    log.error('autocomplete failed', { err });
   }
   await i.respond(choices);
 }

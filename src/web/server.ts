@@ -2,6 +2,7 @@ import http from 'node:http';
 import type { BlizzardClient } from '../blizzard/client.js';
 import type { ProfileService } from '../core/profiles.js';
 import { UserError, type Character } from '../core/types.js';
+import { log } from '../log.js';
 
 const HEADERS = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
 const LINK = /^\/link\/([^/]+)$/;
@@ -52,7 +53,7 @@ export function createWebServer(deps: {
       if (err instanceof UserError) {
         page(res, 400, err.message);
       } else {
-        console.error('link callback failed', err);
+        log.error('link callback failed', { err });
         page(res, 500, 'Something went wrong. Please run /profile link again.');
       }
     }

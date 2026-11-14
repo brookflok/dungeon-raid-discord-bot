@@ -1,0 +1,10 @@
+.env
+.env.*
+.git
+.github
+.superpowers
+data
+dist
+docs
+node_modules
+tests

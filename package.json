@@ -10,6 +10,7 @@
     "build": "tsc && node -e \"require('node:fs').cpSync('src/storage/migrations','dist/storage/migrations',{recursive:true})\"",
     "start": "node dist/main.js",
     "dev": "tsx watch src/main.ts",
+    "register": "node --env-file-if-exists=.env dist/register-commands.js",
     "test": "vitest run",
     "lint": "eslint . && prettier --check .",
     "typecheck": "tsc -p tsconfig.test.json"

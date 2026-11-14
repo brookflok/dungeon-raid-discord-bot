@@ -9,6 +9,7 @@ import {
 import type { Kind, Slots, Template } from '../core/types.js';
 import { UserError, type GuildConfig } from '../core/types.js';
 import { actorOf, type BotModule, type Services } from '../discord/registry.js';
+import { log } from '../log.js';
 import { formatOffsets, parseOffsets } from './admin-parse.js';
 
 const KINDS: Kind[] = ['dungeon', 'raid', 'event'];
@@ -268,7 +269,7 @@ export const admin: BotModule = {
           value: t.id,
         }));
     } catch (err) {
-      console.error('autocomplete failed', err);
+      log.error('autocomplete failed', { err });
     }
     await i.respond(choices);
   },

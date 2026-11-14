@@ -2,6 +2,7 @@ import { messageLink, type Client, type Message, type SendableChannels } from 'd
 import type { ActivityResult, ActivityService, ActivityView, Effect } from '../core/activities.js';
 import type { ConfigService } from '../core/config.js';
 import type { Signup, SignupStatus, TimeSpec } from '../core/types.js';
+import { log } from '../log.js';
 import { renderActivity, timeText } from './render.js';
 
 interface ThreadMessage {
@@ -124,7 +125,7 @@ export function createPublisher(
     try {
       view = (await activities.get(r.activity.id)) ?? r;
     } catch (err) {
-      console.error('publish: re-read', r.activity.id, err);
+      log.error('publish: re-read', { activityId: r.activity.id, err });
     }
     const { activity, signups } = view;
 
@@ -132,7 +133,7 @@ export function createPublisher(
     try {
       post = await showPost(view);
     } catch (err) {
-      console.error('publish: post', activity.id, err);
+      log.error('publish: post', { activityId: activity.id, err });
     }
 
     try {
@@ -142,7 +143,7 @@ export function createPublisher(
         for (const m of messages) await thread.send(m);
       }
     } catch (err) {
-      console.error('publish: thread', activity.id, err);
+      log.error('publish: thread', { activityId: activity.id, err });
     }
 
     try {
@@ -160,7 +161,7 @@ export function createPublisher(
         );
       }
     } catch (err) {
-      console.error('publish: direct messages', activity.id, err);
+      log.error('publish: direct messages', { activityId: activity.id, err });
     }
   };
 }

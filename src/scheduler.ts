@@ -1,5 +1,6 @@
 import type { ActivityResult, ActivityService } from './core/activities.js';
 import type { Clock, Storage } from './core/ports.js';
+import { log } from './log.js';
 
 export class Scheduler {
   private readonly storage: Storage;
@@ -34,7 +35,7 @@ export class Scheduler {
           const result = await this.activities.runJob(job);
           if (result) await this.onResult(result);
         } catch (err) {
-          console.error('Scheduled job failed', job.id, err);
+          log.error('Scheduled job failed', { jobId: job.id, err });
         }
         await this.storage.deleteJob(job.id);
       }
@@ -46,7 +47,7 @@ export class Scheduler {
   start(): void {
     if (this.timer) return;
     const run = (): void => {
-      this.tick().catch((err: unknown) => console.error('Scheduler tick failed', err));
+      this.tick().catch((err: unknown) => log.error('Scheduler tick failed', { err }));
     };
     run();
     this.timer = setInterval(run, this.intervalMs);

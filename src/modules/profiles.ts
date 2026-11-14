@@ -10,6 +10,7 @@ import {
 import { CLASSES, characterLabel } from '../core/profiles.js';
 import type { Character } from '../core/types.js';
 import type { BotModule } from '../discord/registry.js';
+import { log } from '../log.js';
 
 const characterOption = (required: boolean) => (o: SlashCommandStringOption) =>
   o
@@ -100,7 +101,7 @@ export const profiles: BotModule = {
         .filter((c) => c.name.toLowerCase().includes(typed))
         .slice(0, 25);
     } catch (err) {
-      console.error('autocomplete failed', err);
+      log.error('autocomplete failed', { err });
     }
     await i.respond(choices);
   },

@@ -94,52 +94,64 @@ flowchart LR
 
 ### Level 1: layers
 
-Dependencies point inward: outer layers call modules and core, and the core knows only the interfaces it defines.
+Dependencies point inward: the outer layers use the core, and the core knows only the interfaces it defines. `src/main.ts` is the only file that knows every part.
 
 ```mermaid
 flowchart TD
-    main[src/main.ts<br/>wires everything]
-    discord[src/discord<br/>Discord layer]
+    main[src/main.ts<br/>wires and starts everything]
+    register[src/register-commands.ts<br/>registers slash commands]
+    list[src/modules/index.ts<br/>registration list]
+    modules[src/modules<br/>dungeons, raids, events, profiles, admin]
+    discord[src/discord<br/>registry, render, publisher, signup buttons]
     web[src/web<br/>Battle.net login routes]
     blizzard[src/blizzard<br/>client]
-    modules[src/modules<br/>dungeons, raids, events, profiles, admin]
-    core[src/core<br/>rules, no Discord/DB/HTTP]
-    storage[src/storage<br/>memory, sqlite]
     scheduler[src/scheduler.ts]
+    storage[src/storage<br/>memory, sqlite]
+    core[src/core<br/>rules, no Discord/DB/HTTP]
 
+    main --> list
+    register --> list
+    list --> modules
+    list --> discord
     main --> discord
+    main --> scheduler
     main --> web
     main --> blizzard
     main --> storage
-    main --> scheduler
-    main --> modules
-    discord --> modules
-    web --> core
+    modules --> discord
     modules --> core
-    blizzard -. implements character source .-> core
-    storage -. implements storage interface .-> core
+    discord --> core
     scheduler --> core
+    web --> blizzard
+    web --> core
+    blizzard --> core
+    storage -. implements Storage .-> core
 ```
+
+Arrows mean "imports". `src/env.ts` (configuration) and `src/log.ts` (logging) are used by the outer layers and left out of the picture; the core imports neither.
 
 | Building block | Responsibility | Interfaces |
 |---|---|---|
-| `src/core` | Activities, templates, slots, signups, waitlist promotion, lifecycle, reminder planning, permission rules, profiles. Plain TypeScript. | Defines the storage, clock and character source interfaces. Methods return effects. |
-| `src/modules` | Feature modules: dungeons, raids, events, profiles, admin. Each registers its commands, button handlers and post layout and calls the core. No module imports another. | Plugs into the registry in `src/discord`. |
-| `src/discord` | discord.js. Routes slash commands, buttons, menus and forms to modules. Renders posts. Turns effects into posts, threads, mentions and direct messages. | Registry, render, effects, signup buttons. |
-| `src/storage` | Implements the storage interface: in memory (tests) and SQLite with versioned migrations. | Storage interface of the core. |
-| `src/web` | Minimal HTTP server: start Battle.net login from a one-time link, and handle the return. | Calls the core's profile rules. |
-| `src/blizzard` | Implements the character source interface with the Forever lookup. | Character source interface of the core. |
-| `src/scheduler.ts` | Loop every 30 seconds and at startup: finds due reminder and close rows and asks the core to handle them. | Core, clock. |
-| `src/main.ts` | Reads and validates configuration, creates the parts and starts them. The only place that knows all the parts. | Environment variables. |
+| `src/core` | Activities, templates, slots, signups, waitlist promotion, lifecycle, reminder planning, permission rules, settings, profiles. Plain TypeScript. | Defines the `Storage` and `Clock` interfaces. Activity methods return an `ActivityResult`: the stored state plus a list of effects. Characters fetched from Battle.net arrive as plain data (`FetchedCharacter`). |
+| `src/modules` | Feature modules: dungeons, raids, events, profiles, admin. Each declares its slash commands and handles its commands, autocomplete, buttons and forms by calling the core. Helpers shared by several modules live in `shared-options.ts` and `admin-parse.ts`. No module imports another. | Each exports a `BotModule` (defined in `src/discord/registry.ts`). `index.ts` is the registration list: the single place a feature is registered, and the only file that imports all modules. |
+| `src/discord` | discord.js. `registry.ts` routes commands and autocomplete by command name, and buttons, menus and forms by custom-id prefix. `render.ts` builds every post from stored state. `effects.ts` is the publisher: it turns an `ActivityResult` into a post, a post edit, thread messages, mentions and direct messages. `signup-buttons.ts` handles the buttons on every post. | `BotModule`, `Services`, `createRouter`, `createPublisher`. |
+| `src/storage` | Implements `Storage`: in memory (tests) and SQLite with versioned migrations, applied at startup. | `Storage` of the core. |
+| `src/web` | Minimal `node:http` server with two routes: `/link/:token` starts the Battle.net login, `/callback` finishes it. | Uses `ProfileService` and the Blizzard client. Reports a finished link through an `onLinked` callback, which `main.ts` sets to the direct message from `src/modules/profiles.ts`. |
+| `src/blizzard` | Battle.net OAuth code exchange and the Forever character lookup. | Defines the `BlizzardClient` interface that the web layer uses. |
+| `src/scheduler.ts` | Every 30 seconds, starting when the Discord client is ready: runs the due jobs through `ActivityService` and hands each result to the publisher. One failing job does not stop the others. | Core, clock, publisher (`onResult`). |
+| `src/main.ts` | Composition root. Validates the environment, opens the SQLite storage, creates exactly one instance of each service, seeds the templates, connects to Discord with only the `Guilds` intent, starts the scheduler and the web server, and stops everything on `SIGTERM` or `SIGINT`. | Environment variables. |
+| `src/register-commands.ts` | Registers the slash commands of every module in the registration list as guild commands (`npm run register`). | Discord REST API. |
 
 The core emits these **effects**: `filled`, `refilled`, `promoted`, `starterChanged`, `timeChanged`, `cancelled`, `reminder`, `closed`.
 
 ### Level 2: files
 
-This is the planned file structure. Paths are relative to the repository root.
+This is the file structure as built. Paths are relative to the repository root.
 
 ```mermaid
 flowchart LR
+    main[src/main.ts]
+    register[src/register-commands.ts]
     subgraph core[src/core]
       types[types.ts]
       ports[ports.ts]
@@ -151,7 +163,9 @@ flowchart LR
       profiles[profiles.ts]
     end
     subgraph modules[src/modules]
+      index[index.ts]
       mods[dungeons, raids, events, profiles, admin]
+      shared[shared-options.ts, admin-parse.ts]
     end
     subgraph discord[src/discord]
       registry[registry.ts]
@@ -163,11 +177,18 @@ flowchart LR
       memory[memory.ts]
       sqlite[sqlite.ts]
     end
-    registry --> mods
+    main --> index
+    register --> index
+    index --> mods
+    index --> signup
+    main --> registry
+    main --> effects
+    mods --> shared
+    mods --> registry
     mods --> core
+    signup --> registry
     signup --> core
     effects --> render
-    signup -. registered in .-> registry
     memory -. implements .-> ports
     sqlite -. implements .-> ports
 ```
@@ -175,30 +196,37 @@ flowchart LR
 | File | Responsibility |
 |---|---|
 | `src/env.ts` | Reads and validates environment variables at startup. |
-| `src/main.ts` | Wiring: creates the parts and starts them. |
+| `src/log.ts` | Logger: one JSON object per line (`level`, `msg`, `time`, context); an error is written as its name, message and stack. Not used by the core. |
+| `src/main.ts` | Composition root: creates the parts, starts them, and stops them on `SIGTERM` or `SIGINT`. |
+| `src/register-commands.ts` | `npm run register`: registers every module's slash commands for the guild. |
 | `src/core/types.ts` | Domain types and `UserError`. |
-| `src/core/ports.ts` | `Storage` and `Clock` interfaces (and the character source) that the core needs. |
+| `src/core/ports.ts` | `Storage` and `Clock` interfaces that the core needs. |
 | `src/core/time.ts` | `parseTime`: typed time input in the guild timezone. |
 | `src/core/config.ts` | `ConfigService`: settings and the officer rule. |
-| `src/core/templates.ts` | `TemplateService`: add, edit, disable templates. |
-| `src/core/activities.ts` | `ActivityService`: signups, waitlist, lifecycle; returns effects. |
+| `src/core/templates.ts` | `TemplateService`: add, edit, disable and seed templates. |
+| `src/core/activities.ts` | `ActivityService`: signups, waitlist, lifecycle; returns effects. Its internal queue applies changes one at a time, so the process must hold exactly one instance. |
 | `src/core/jobs.ts` | `planJobs`: plans reminder and closing jobs. |
-| `src/core/profiles.ts` | `ProfileService`: link results, manual characters, main character, removal. |
+| `src/core/profiles.ts` | `ProfileService`: one-time links, link results, manual characters, main character, removal. |
 | `src/storage/memory.ts` | In-memory `Storage` for tests. |
 | `src/storage/sqlite.ts` | SQLite `Storage`. |
 | `src/storage/migrations/001_init.sql` | First database migration. |
 | `src/scheduler.ts` | 30-second loop over due jobs. |
-| `src/discord/registry.ts` | `BotModule` interface and routing of commands, buttons, menus and forms. |
-| `src/discord/render.ts` | Turns an activity into a message payload. |
-| `src/discord/effects.ts` | Applies effects: re-render, thread, direct messages. |
+| `src/discord/registry.ts` | `BotModule` and `Services` interfaces, routing of commands, autocomplete, buttons, menus and forms, and the error reply. |
+| `src/discord/render.ts` | Turns an activity of any kind into a message payload. |
+| `src/discord/effects.ts` | The publisher: post, thread, mentions, direct messages. |
 | `src/discord/signup-buttons.ts` | Shared handler for the buttons on every activity post. |
-| `src/modules/{dungeons,raids,events,profiles,admin}.ts` | Feature modules: commands, handlers and post layout. |
+| `src/modules/index.ts` | Registration list of all modules, read by `main.ts` and `register-commands.ts`. |
+| `src/modules/{dungeons,raids,events,profiles,admin}.ts` | Feature modules: slash commands and their handlers. |
+| `src/modules/shared-options.ts` | Shared by dungeons, raids and events: time and post options, the cancel and time subcommands, template choice and autocomplete, publishing a new post. |
+| `src/modules/admin-parse.ts` | Reading and writing reminder offsets such as "24h, 1h, 15m". |
 | `src/blizzard/client.ts` | OAuth exchange and Forever character lookup. |
 | `src/web/server.ts` | The two routes `/link/:token` and `/callback`. |
-| `seed/templates.json` | Initial dungeons and raids. |
-| `docs/operations.md` | Deploy, backup and manual test checklist. |
+| `seed/templates.json` | Initial dungeons and raids, added at every start when no template of that kind has the name. `main` reads it as `../seed/templates.json`, so the same path works from `src/` and `dist/`. |
+| `Dockerfile`, `.dockerignore` | The container image (section 7). |
+| `docs/operations.md` | Setup, deployment, backup and the manual test checklist. |
+| `tests/` | Vitest tests, mirroring `src/`. `tests/support/storage-contract.ts` runs the same storage tests against both storages. |
 
-`src/discord/signup-buttons.ts` is itself a registered module-style handler (custom-id prefix `act`). It lives in the Discord layer and handles the buttons on every activity post. The feature modules in `src/modules` do not import it, and it does not import them, so there is no dependency cycle: the modules and `signup-buttons.ts` are independent siblings that both register with `registry.ts`.
+`src/discord/signup-buttons.ts` is itself a `BotModule` (custom-id prefix `act`) without slash commands. It lives in the Discord layer because it handles the buttons on every activity post, and it is registered through `src/modules/index.ts` like the feature modules. The feature modules do not import it and it does not import them, so there is no dependency cycle.
 
 ## 6. Runtime View
 
@@ -282,29 +310,34 @@ If the Battle.net account is already linked to another member, the link is refus
 ```mermaid
 flowchart LR
     Internet((Internet))
-    Proxy[HTTPS reverse proxy]
     subgraph Host[Server]
-      subgraph Container[Docker container: guild-bot]
-        App[Node.js process<br/>bot, web layer, scheduler]
+      Proxy[HTTPS reverse proxy]
+      subgraph Container[Docker container guild-bot, user node]
+        App[node dist/main.js<br/>bot, web server, scheduler]
       end
-      Vol[(Volume<br/>SQLite file)]
+      Vol[(data folder, volume /app/data<br/>bot.sqlite)]
+      Backup[daily sqlite3 .backup<br/>backups folder]
     end
-    DiscordAPI[Discord API]
-    Blizz[Blizzard API]
-    Internet --> Proxy --> App
+    DiscordAPI[Discord gateway and REST API]
+    Blizz[Battle.net OAuth and Blizzard API]
+    Internet -- HTTPS --> Proxy -- HTTP to 127.0.0.1:3050 --> App
     App --- Vol
+    Vol --> Backup
     App <--> DiscordAPI
     App <--> Blizz
 ```
 
 | Element | Notes |
 |---|---|
-| Docker container | One image, one process. Configuration only through environment variables (Discord token, Blizzard client id and secret, public base URL, region, database path). |
-| Volume | Holds the SQLite file. It must be persistent and backed up; the deployment documentation includes a backup routine. |
-| HTTPS | A reverse proxy or the hosting platform terminates HTTPS and forwards to the web port. Only the two login routes are served. |
+| Image | `Dockerfile` with two stages on `node:24-slim`. The build stage installs python3, make and g++ (better-sqlite3 compiles its native part when no prebuilt binary matches), runs `npm ci` and `npm run build`, then removes the development dependencies. The runtime stage holds only the production `node_modules`, `dist/` and `seed/`, runs as the non-root user `node` (uid 1000), declares `VOLUME /app/data` and starts `node dist/main.js`. `.dockerignore` keeps `.env`, the data folder, tests and docs out of the image. |
+| Container | One container, one process, and only one process per database: signups are put in order by a queue inside the process, so a second process on the same file could overfill a group. Configuration only through environment variables (`--env-file .env`): `DISCORD_TOKEN`, `DISCORD_APP_ID`, `GUILD_ID`, `DATABASE_PATH`, `PUBLIC_URL`, `PORT`, `BLIZZARD_CLIENT_ID`, `BLIZZARD_CLIENT_SECRET`, `BLIZZARD_REGION`, validated at startup. `docker stop` sends `SIGTERM`: the scheduler stops, the web server and the Discord connection close, then the database. |
+| Volume | `/app/data`, a host folder owned by uid 1000. It holds `bot.sqlite` (WAL mode). Migrations run at startup. The host backs it up daily with `sqlite3 … ".backup …"`. |
+| HTTPS | The web server speaks plain HTTP on `PORT` (default 3050), published on `127.0.0.1` only. A reverse proxy terminates HTTPS for `PUBLIC_URL` and forwards to it. Only `/link/:token` and `/callback` are served; the Battle.net redirect URL is `${PUBLIC_URL}/callback`. |
+| Discord | Gateway connection with only the `Guilds` intent; posts, threads and direct messages go through the REST API. Slash commands are guild commands for `GUILD_ID`, registered with `npm run register` after each update. |
+| Logs | stdout and stderr, one JSON object per line (`level`, `msg`, `time`, context), read with `docker logs`. Tokens, OAuth codes and secrets are never logged. An unhandled promise rejection is logged and the bot keeps running; an uncaught exception or a failed Discord login is logged and the process exits non-zero, and Docker's restart policy starts it again. |
 | CI | GitHub Actions runs lint, type check and tests on every push. |
 
-The specific host and the way HTTPS is terminated are left to the operator.
+The host and the reverse proxy are the operator's choice. [docs/operations.md](../operations.md) describes one setup (Docker with Caddy) step by step, including the daily backup.
 
 ## 8. Cross-cutting Concepts
 
