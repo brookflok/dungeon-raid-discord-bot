@@ -1,0 +1,502 @@
+= Requirements: Guild Bot for WoW Forever
+:toc: left
+:toclevels: 3
+:sectnums:
+:revdate: 2026-11-14
+:revremark: Version 1 draft, based on docs/superpowers/specs/2026-11-14-guild-bot-design.md
+
+This document follows the req42 framework (12 sections). Items that the designer decided without the project owner are marked *(call)*; they can be changed.
+
+== Business Goals
+
+The bot is for one World of Warcraft: Forever guild. Its purpose is that guild members find each other faster and play together more.
+
+* A member who wants to run a dungeon has a group with a few clicks.
+* Officers can organise raids.
+* Any member can put up a casual event.
+
+The guild has not finished deciding what the bot should do. Features will be added and changed as the guild decides. *The most important quality of this system is that it is cheap to change and extend.* New features are written by a developer in code. Changes made from inside Discord are small and mostly additive (add a dungeon, add a template, adjust a reminder).
+
+Goals of version 1:
+
+* Dungeon finder: any member starts a group, others join by role, everyone is notified when it is full.
+* Raid finder: officers post raids, members sign up by role.
+* Event planner: any member posts a free-form event with a limited or unlimited number of spots.
+* Character profiles: members link Battle.net and pick their Forever characters, or enter them by hand.
+* Officer commands for the small, frequent changes (content list, templates, reminder timing, channels).
+* Requirements documented with req42 and architecture with arc42, written before code and kept current.
+
+Anti-goals (things that must not happen):
+
+* A new feature requires changes to existing feature modules or a rewrite of the core.
+* Group finding stops when Blizzard's interface is unavailable or changes.
+* Members are blocked from joining a group because they have no profile.
+* Battle.net passwords, or long-lived access to members' accounts, are stored.
+
+== Stakeholders
+
+[cols="2,3,3", options="header"]
+|===
+| Stakeholder | Role | Expectations
+
+| Guild members
+| Use the bot in Discord to start and join dungeon groups, raids and events, and to keep a character profile.
+| Few clicks. Clear notifications when a group is full or about to start. No obligation to create a profile.
+
+| Officers
+| Guild members with a Discord role configured as officer role. Organise raids and maintain templates and settings.
+| Post raids with roles and times. Change templates, reminders and channels from Discord without a developer.
+
+| Guild leadership
+| Decide what the bot should do and approve changes to its scope.
+| A bot that helps the guild play together more and can follow changing decisions cheaply.
+
+| Developer and maintainer
+| Writes, deploys and operates the bot.
+| Easy to add features, automated tests, simple deployment, backup routine for the database.
+
+| Blizzard (external party)
+| Operates Battle.net login and the character lookup that the bot calls.
+| The bot uses the lookup within the terms of the registered application. Blizzard does not document the Forever lookup, so it may change without notice.
+
+| Discord (external party)
+| Operates the platform on which the bot runs.
+| The bot follows Discord's interaction limits (for example the 3-second acknowledgement) and bot rules.
+|===
+
+== Scope
+
+=== In scope
+
+The bot runs as one program for one guild. Members use it only through Discord. A small public web address exists only for the Battle.net login return step.
+
+=== Context
+
+[cols="2,3,3", options="header"]
+|===
+| Partner | Direction | What is exchanged
+
+| Guild members (in Discord)
+| Both ways
+| Slash commands, buttons, menus and forms in. Posts, threads, mentions and direct messages out.
+
+| Discord
+| Both ways
+| The bot receives interactions and sends and edits messages through the Discord API.
+
+| Battle.net / Blizzard API
+| Both ways
+| The member logs in on Battle.net (scope `wow.profile`). The bot then calls `GET https://{region}.api.blizzard.com/profile/user/wow?namespace=profile-forever-{region}` once and receives each Forever character's id, name, surname, class, race, faction and level.
+
+| Member's web browser
+| In, from the member
+| Opens the one-time link and returns from Battle.net to the bot's public HTTPS address.
+|===
+
+=== Out of scope
+
+See the "later" items in the product backlog: web dashboard for officers, attendance history, weekly calendar post, level-range pings, loot systems, more than one guild per installation, and per-character detail from Blizzard.
+
+== Product Backlog
+
+Each epic matches one goal of version 1. Story ids use these prefixes: `DF` dungeon finder, `RF` raid finder, `EV` event planner, `PR` profiles, `AD` administration (officer commands). Acceptance criteria are taken from the behaviour described in the design (section 5).
+
+=== Epic DF: Dungeon finder
+
+*DF-1 Start a dungeon group.* As a member I run `/dungeon` and choose a dungeon, my role and the time option, so that a group post appears.
+
+* The bot answers privately with a dungeon choice list (with search), a role choice and a time option.
+* The bot posts in the configured group-finder channel. The post shows title, starter, time, one line per role with filled and total slots and the names of members, and a waitlist line.
+* The starter always takes a slot with the chosen role.
+
+*DF-2 Join by role.* As a member I click a role button to join.
+
+* A member with one character on their profile is shown with that character. With several characters the bot asks privately which one. With no profile the member joins showing their Discord name.
+* A member has at most one signup per activity. Clicking another role moves them.
+* Role is always chosen at signup and never derived from class.
+
+*DF-3 Waitlist and promotion.* As a member I am put on a waitlist when my role is full, so that I get a place when one frees up.
+
+* If the role is full, the member goes on that role's waitlist.
+* When a member leaves, the first waitlisted member for that role is promoted, notified and mentioned in the thread.
+* A full activity that loses a member goes back to open. When it fills again, a short "full again" note goes to the thread only, with no direct messages.
+* Two simultaneous clicks cannot overfill a slot.
+
+*DF-4 Full notification.* As a signed-up member I am told when the group is full.
+
+* When every slot is filled the bot mentions all members in the post's thread and sends each a direct message.
+* The thread is created the first time the bot has something to tell the group (full, reminder, time change, cancellation) and reused afterwards.
+* A member who blocks direct messages still gets the thread mention. A failed direct message is not an error.
+
+*DF-5 Choose when.* As a starter I choose a date and time, "as soon as possible", or "flexible".
+
+* A date and time is entered as free text in the guild's timezone (default Europe/Berlin) *(call)*, for example `today 20:30`, `tomorrow 19:00` or `2026-11-20 19:00`. It is displayed with Discord's timestamp format so every member sees their own local time. Unparseable input gives a clear error with an example.
+* "As soon as possible" has no reminder. When full, the group is told to go now. An unfilled ASAP activity closes automatically after 2 hours *(call)*.
+* "Flexible" has no time yet. When full, the group agrees a time in the thread. The starter can set a time later, which then schedules reminders. An unfilled flexible activity closes after 7 days *(call)*.
+* The 2-hour and 7-day limits count from posting and apply while the activity is open, including activities that were full and reopened.
+
+*DF-6 Reminders.* As a signed-up member I get a reminder before the start.
+
+* A reminder goes to the thread, mentioning the members, at the template's offsets. The default for a dungeon is 15 minutes before.
+* Reminders are sent whether or not the activity is full, and are skipped when nobody is signed up.
+* The reminder offsets in force when the activity is posted are copied onto it. Later changes to settings or templates do not affect activities already posted *(call)*.
+* A timed activity that is not full at its start time continues to "finished"; the reminder still goes to whoever is signed up.
+
+*DF-7 Cancel or reschedule.* As a starter (or an officer) I can cancel the activity or change its time.
+
+* Signed-up members are notified in the thread or, if none exists, by a mention on the post.
+* A time change reschedules the reminders.
+
+*DF-8 Starter leaves.* As a group I want the activity to continue when the starter leaves.
+
+* If the starter leaves, the longest-signed member becomes starter *(call)*.
+* If no one is left, the activity closes.
+
+*DF-9 Finish.* As a member I see that an activity is over.
+
+* Three hours after the start time the post is marked finished and its buttons are removed *(call)*. For an activity with no time, three hours after it became full.
+
+=== Epic RF: Raid finder
+
+*RF-1 Post a raid.* As an officer I run `/raid` to post a raid.
+
+* Only officers can run `/raid`. Other members get a clear message.
+* A date and time is required *(call)*.
+* Slots are by role and raid-sized, taken from the chosen template. A raid starter chooses whether to sign up; "starter" is then only the person who may cancel or edit.
+
+*RF-2 Sign up by role.* As a member I sign up with a role, as for dungeons (DF-2, DF-3).
+
+* The waitlist works as for dungeons.
+* A raid with no signups stays open until its time. The starter hand-over rule (DF-8) applies only to dungeons.
+
+*RF-3 Tentative and can't come.* As a member I say that I am tentative or cannot come.
+
+* The post has additional *Tentative* and *Can't come* buttons.
+* These are shown as separate lists and do not occupy slots.
+
+*RF-4 Raid reminders and full notification.* As a signed-up member I am reminded before the raid.
+
+* Reminders go out 24 hours and 1 hour before, and mention confirmed and tentative members.
+* The "full" notification is sent when all slots are filled, as for dungeons.
+
+=== Epic EV: Event planner
+
+*EV-1 Post an event.* As a member I run `/event` and fill in a form to post an event.
+
+* The form has title, description, time (as in DF-5) and maximum people (empty means unlimited).
+* Events have no templates; everything comes from the form *(call)*.
+* An event starter chooses whether to sign up.
+
+*EV-2 Join and leave.* As a member I join or leave an event with a single *Join* / *Leave* pair of buttons.
+
+* The post shows the description and the list of people coming. The only role is Participant.
+* A capped event uses the waitlist as in DF-3. An unlimited event never becomes full.
+
+*EV-3 Event reminder.* As a participant I get a reminder.
+
+* One reminder goes to the thread 1 hour before *(call)*. Unlimited events send only this reminder.
+* An event with no signups stays open until its time (or until it expires, see DF-5).
+
+=== Epic PR: Character profiles
+
+*PR-1 Link Battle.net.* As a member I run `/profile link` to get my Forever characters from Battle.net.
+
+* The bot replies privately with a one-time link valid for 10 minutes. The link is random and single use.
+* The login uses a state value bound to the Discord user.
+* The bot reads the member's Forever characters once, stores them, discards the access token and confirms in Discord. Access tokens are never stored or logged.
+* The region for the Blizzard lookup is a setting, default `eu` *(call)*.
+
+*PR-2 Link rules.* As a member I want my profile to stay correct after a relink.
+
+* A Battle.net account can be linked to one Discord member only; a second member trying to link it is refused with an explanation *(call)*.
+* On link or refresh, a manual character with the same name and surname as a returned one becomes that linked character *(call)*.
+* Linked characters Blizzard no longer returns are removed. Manual characters are untouched *(call)*.
+
+*PR-3 Enter characters by hand.* As a member I run `/profile add` with name, surname (optional), class and level.
+
+* This works when Battle.net is unavailable. Group finding never requires a profile.
+
+*PR-4 Show and choose main.* As a member I run `/profile show` and `/profile main`.
+
+* Characters are displayed as `Brook Flok, Priest 37`.
+* If the main character is removed, the highest-level remaining character becomes main *(call)*.
+
+*PR-5 Remove my data.* As a member I run `/profile remove` to delete one character or everything.
+
+* Removing everything also removes the Battle.net link and all stored data about the member.
+
+*PR-6 Refresh.* As a member I run `/profile refresh` to repeat the login and update levels and new characters.
+
+* The same rules as PR-2 apply.
+
+=== Epic AD: Officer commands
+
+*AD-1 Officer definition.* As leadership I want "officer" to mean something simple.
+
+* An officer is a member with one of the Discord roles configured as officer roles. Server administrators always count *(call)*.
+
+*AD-2 Channels.* As an officer I run `/config channels` to choose the channel in which each activity kind posts.
+
+*AD-3 Officer roles.* As an officer I run `/config officers` to choose which Discord roles are officers.
+
+*AD-4 Reminders.* As an officer I run `/config reminders` to set the default reminder offsets per kind.
+
+* Defaults: dungeon 15 minutes; raid 1440 and 60 minutes; event 60 minutes.
+* A template may override the per-kind setting (see DF-6).
+
+*AD-5 Timezone.* As an officer I run `/config timezone` to set the guild's timezone for typed times (default Europe/Berlin).
+
+*AD-6 Templates.* As an officer I run `/template add`, `/template edit` and `/template disable`.
+
+* A template has a name, kind (dungeon or raid), a slot definition (role to count) and optional reminder offsets.
+* Roles are a fixed set (tank, healer, dps, and participant for events). Templates choose counts per role, not new role names. A new role is a code change *(call)*.
+* Disabling hides a template from choice lists and does not touch existing activities. There is no delete.
+* The initial dungeon and raid list ships as a seed data file based on the original game's content *(call)*.
+
+=== Epic OP: Operation (supports all epics)
+
+*OP-1 Restart safety.* Reminders and automatic closing are stored in the database with a due time and checked every 30 seconds and at startup. Reminders more than 10 minutes overdue at startup are skipped *(call)*.
+
+*OP-2 Error handling.* Errors a member should see are shown as such. Any other error is logged and the member sees "Something went wrong."
+
+*OP-3 Acknowledgement.* Every Discord interaction is acknowledged before storage or network work, to meet Discord's 3-second limit.
+
+=== Later (non-goals of version 1)
+
+* LA-1 Web dashboard for officers.
+* LA-2 Attendance history.
+* LA-3 Weekly calendar post.
+* LA-4 Level-range pings.
+* LA-5 Loot systems.
+* LA-6 More than one guild or Discord server per installation. The data model keeps a server id on its records so this is not ruled out, but nothing is built for it *(call)*.
+* LA-7 Per-character detail from Blizzard (gear, stats).
+
+== Supporting Models
+
+=== Activity lifecycle
+
+An *activity* is the one underlying idea behind dungeon groups, raids and events: a title, a starter, a time, a set of slots, signups and a lifecycle.
+
+[plantuml, activity-lifecycle, svg]
+----
+@startuml
+[*] --> Open : posted
+Open --> Full : all slots filled
+Full --> Open : a member leaves\n(first waitlisted member promoted)
+Full --> Finished : start time + 3 h\n(or filled + 3 h if no time)
+Open --> Finished : start time + 3 h
+Open --> Cancelled : starter or officer cancels
+Full --> Cancelled : starter or officer cancels
+Open --> Expired : ASAP 2 h / flexible 7 d\nfrom posting
+Full --> Expired : reopened, then limit reached
+Finished --> [*]
+Cancelled --> [*]
+Expired --> [*]
+@enduml
+----
+
+Note: a dungeon whose last member leaves closes. A raid or event with no signups stays open until its time.
+
+=== Domain model
+
+[plantuml, domain-model, svg]
+----
+@startuml
+class Template {
+  name
+  kind : dungeon | raid
+  slots : role -> count
+  reminderOffsets (optional)
+  enabled
+}
+class Activity {
+  serverId
+  kind : dungeon | raid | event
+  title
+  description (events)
+  startsAt (optional)
+  timeMode : fixed | asap | flexible
+  state
+  reminderOffsets (copied)
+}
+class Slot {
+  role : tank | healer | dps | participant
+  capacity
+}
+class Signup {
+  role
+  status : confirmed | waitlist | tentative | cannotCome
+  signedAt
+}
+class Member {
+  discordUserId
+  battleNetAccountId
+}
+class Character {
+  blizzardId (if linked)
+  name
+  surname
+  class
+  race
+  faction
+  level
+  source : linked | manual
+  lastUpdated
+}
+Template "0..1" <-- Activity : created from
+Activity "1" *-- "1..*" Slot
+Activity "1" *-- "0..*" Signup
+Member "1" -- "0..*" Signup
+Member "1" *-- "0..*" Character
+Signup "0..*" --> "0..1" Character : shown as
+Member "1" --> "0..1" Character : main
+@enduml
+----
+
+=== Template kinds
+
+[cols="1,2,2,2,2", options="header"]
+|===
+| Kind | Who can start | Slots | Extra signup states | Default reminders
+
+| Dungeon | any member | by role, for example 1 tank / 1 healer / 3 dps | waitlist | 15 minutes before
+| Raid | officers | by role, raid-sized | waitlist, tentative, can't come | 24 hours and 1 hour before
+| Event | any member | one open group, capped or unlimited | waitlist when capped | 1 hour before *(call)*
+|===
+
+== Quality Requirements
+
+Quality goals in priority order:
+
+. *Changeability* (most important)
+. *Reliability* of notifications
+. *Privacy*
+
+Scenarios:
+
+[cols="1,4,3", options="header"]
+|===
+| Id | Scenario | Measure
+
+| Q-1
+| A developer adds a new feature (for example a weekly calendar post).
+| It is added as one new module file and one registration line, without editing other modules. No module imports another module.
+
+| Q-2
+| An officer adds a dungeon or changes a reminder offset from Discord.
+| No deployment or code change is needed.
+
+| Q-3
+| A developer changes a rule of the core (for example how waitlist promotion works).
+| The change is made and checked by automated tests that use in-memory storage and a fake clock, without a live Discord server.
+
+| Q-4
+| The bot is restarted while reminders are pending.
+| No reminder is lost. Reminders more than 10 minutes overdue are skipped.
+
+| Q-5
+| Two members click the last free slot at the same moment.
+| Exactly one gets the slot, the other goes on the waitlist. A slot is never overfilled.
+
+| Q-6
+| A member has blocked direct messages, or a post edit fails.
+| The thread mention still arrives. The post is re-rendered from stored state and the edit can be retried. A failed direct message is not an error.
+
+| Q-7
+| Blizzard changes or withdraws the unofficial Forever lookup.
+| Group finding is unaffected. Manual profiles keep working. Only the Blizzard client has to change.
+
+| Q-8
+| A member removes their profile.
+| All stored data about the member is deleted, including the Battle.net link. No Battle.net access token is ever stored or logged.
+
+| Q-9
+| A member clicks a button.
+| The interaction is acknowledged within Discord's 3-second limit.
+|===
+
+== Constraints
+
+=== Organizational constraints
+
+* The bot speaks English only (owner's decision): all texts and typed time input. No translation layer is built.
+* Project rules in `CLAUDE.md`: simplicity first, surgical changes, verifiable goals.
+* Documentation templates: arc42 (Markdown, 12 sections) and req42 (AsciiDoc, 12 sections). This document and the architecture document are written before code and updated with every feature.
+* Work proceeds test-first.
+
+=== Technical constraints
+
+* WoW Forever launched on 2026-11-04 and is based on the original 2004 game. It has no realms; characters have a first name and a surname. Content and group sizes may change, so the dungeon and raid list is data, not code.
+* Blizzard's official documentation does not mention Forever. A test on 2026-11-14 with a real account confirmed that, after Battle.net login with scope `wow.profile`, `GET https://{region}.api.blizzard.com/profile/user/wow?namespace=profile-forever-{region}` returns each Forever character's id, name, surname, class, race, faction and level. Retail characters come from a different namespace and are not shown. This behaviour is unofficial and may change.
+* Battle.net login requires a public HTTPS address for the return step.
+* Secrets are only passed through environment variables.
+* Technology *(call)*: TypeScript on Node.js 24 or newer, discord.js 14, SQLite, Vitest, ESLint and Prettier, configuration validated at startup, structured logs, Docker image, GitHub Actions running lint, type check and tests.
+
+== Domain Terminology
+
+[cols="1,4", options="header"]
+|===
+| Term | Meaning
+
+| Activity | Something with a title, a starter, a time, slots, signups and a lifecycle. Dungeon groups, raids and events are all activities.
+| Template | Reusable definition for dungeons and raids: name, kind, slots per role and optional reminder offsets. Events have no templates.
+| Slot | A place in an activity for one member in one role. A role has a count of slots.
+| Role | One of tank, healer, dps, or participant (events only). The set is fixed.
+| Signup | A member's single entry in an activity: a role and a status (confirmed, waitlist, tentative, can't come).
+| Waitlist | Ordered queue per role of members who wanted a full role. The first one is promoted when a place frees up.
+| Starter | The member who posted an activity. May cancel it or change its time. A dungeon starter always takes a slot.
+| Officer | A member with a Discord role configured as officer role. Server administrators always count.
+| Main | The character a member has chosen as their main, used when they have several.
+| Surname | Second part of a Forever character's name. Forever has no realms; a character has a first name and a surname.
+| ASAP | Time option "as soon as possible": no reminder, closes after 2 hours if not full.
+| Flexible | Time option with no time yet: the group agrees one later. Closes after 7 days if not full.
+| Effect | Something the core reports as having happened (for example "filled" or "reminder due") that the Discord layer then turns into posts, threads and messages.
+| Thread | A Discord thread on an activity post, created when the bot first has something to tell the group.
+| Forever | World of Warcraft: Forever, the game version this guild plays.
+|===
+
+== Assets
+
+* *Seed list:* a data file with the initial dungeons and raids and their slot counts, based on the original game's content. The exact list is decided when the file is written.
+* *Blizzard application:* `dungeon-organization-guild` exists. Before going live its redirect URL must be updated to the hosted address and its secret regenerated, because the test secret was exposed.
+* *Discord application:* a bot application and a test Discord server for manual checks.
+* *Hosting:* a server that runs one Docker container, a persistent volume for the database file, and a public HTTPS address.
+
+== Teams
+
+There is one team of one role: the developer and maintainer, who builds and operates the bot. Officers decide small configuration changes in Discord. Guild leadership decides what the bot should do next.
+
+== Roadmap
+
+* *Version 1:* dungeon finder, raid finder, event planner, character profiles, officer commands (all epics above), documentation, Docker image and CI.
+* *Later, each as a new module* without changes to existing modules: weekly calendar post, attendance history, level-range pings, loot systems. A web dashboard would be a further outer layer. Multi-guild support and per-character detail from Blizzard are possible but not planned.
+
+Each new feature starts as a backlog item in this document and ends with the arc42 building block view updated.
+
+== Risks & Assumptions
+
+=== Risks
+
+[cols="3,3", options="header"]
+|===
+| Risk | Mitigation
+
+| Blizzard changes or withdraws the unofficial Forever lookup.
+| Manual profiles keep everything working. The Blizzard client is isolated behind one interface.
+
+| Discord changes its interaction interfaces.
+| The change is confined to the Discord layer.
+
+| The single SQLite file is lost.
+| The deployment documentation must include a backup routine.
+
+| The Blizzard secret was exposed during testing.
+| Regenerate the secret before going live.
+|===
+
+=== Assumptions
+
+* The guild is one Discord server.
+* The Forever lookup keeps working as confirmed on 2026-11-14.
+* Members are willing to log in on Battle.net if they want their characters filled in, and the profile stays optional for the rest.
+* Defaults in this document marked *(call)* are acceptable until the owner says otherwise.
