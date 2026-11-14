@@ -1,11 +1,46 @@
-import type { Client, Message, SendableChannels } from 'discord.js';
+import { messageLink, type Client, type Message, type SendableChannels } from 'discord.js';
 import type { ActivityResult, ActivityService, ActivityView, Effect } from '../core/activities.js';
 import type { ConfigService } from '../core/config.js';
-import type { TimeSpec } from '../core/types.js';
+import type { Signup, SignupStatus, TimeSpec } from '../core/types.js';
 import { renderActivity, timeText } from './render.js';
 
-/** The line for an effect told to the whole group; undefined for the others. */
-function groupText(e: Effect, time: TimeSpec): string | undefined {
+interface ThreadMessage {
+  content: string;
+  allowedMentions: { users: string[] };
+}
+
+/** Who is mentioned in the thread for an effect. */
+export function recipients(e: Effect, signups: Signup[]): string[] {
+  const withStatus = (...statuses: SignupStatus[]): string[] =>
+    signups.filter((s) => statuses.includes(s.status)).map((s) => s.userId);
+  switch (e.type) {
+    case 'cancelled':
+    case 'timeChanged':
+      return withStatus('confirmed', 'waitlist', 'tentative');
+    case 'filled':
+    case 'refilled':
+    case 'reminder':
+      return withStatus('confirmed', 'tentative'); // tentative exists only in raids
+    case 'promoted':
+    case 'starterChanged':
+      return [e.userId];
+    case 'closed':
+      return [];
+  }
+}
+
+/** Mentions split into messages of at most 80 ids (Discord allows 100 ids and 2000 characters). */
+export function mentionChunks(userIds: string[]): ThreadMessage[] {
+  const chunks: ThreadMessage[] = [];
+  for (let n = 0; n < userIds.length; n += 80) {
+    const users = userIds.slice(n, n + 80);
+    chunks.push({ content: users.map((id) => `<@${id}>`).join(' '), allowedMentions: { users } });
+  }
+  return chunks;
+}
+
+/** The thread line for an effect; promoted and starterChanged name their member inline. */
+function effectText(e: Effect, time: TimeSpec): string | undefined {
   switch (e.type) {
     case 'filled':
       if (time.type === 'at') return `✅ The group is full! Starts ${timeText(time)}`;
@@ -20,39 +55,31 @@ function groupText(e: Effect, time: TimeSpec): string | undefined {
       return '🚫 This group was cancelled.';
     case 'reminder':
       return `⏰ Reminder: starts ${timeText(time)}`;
+    case 'promoted':
+      return `⬆️ <@${e.userId}> moved up from the waitlist and is now in the group.`;
+    case 'starterChanged':
+      return `👑 <@${e.userId}> is now the starter of this group.`;
   }
 }
 
-/** One thread message for the result's effects, mentioning only the members concerned. */
-function threadNote({ activity, signups }: ActivityView, effects: Effect[]) {
+/** The text (pinging only members named in it), then the other recipients in mention chunks. */
+function threadMessages({ activity, signups }: ActivityView, effects: Effect[]): ThreadMessage[] {
   const lines: string[] = [];
-  const users = new Set<string>();
-  let tellGroup = false;
+  const named = new Set<string>();
+  const others = new Set<string>();
   for (const e of effects) {
-    if (e.type === 'promoted' || e.type === 'starterChanged') {
-      lines.push(
-        e.type === 'promoted'
-          ? `⬆️ <@${e.userId}> moved up from the waitlist and is now in the group.`
-          : `👑 <@${e.userId}> is now the starter of this group.`,
-      );
-      users.add(e.userId);
-    } else {
-      const text = groupText(e, activity.time);
-      if (text) {
-        lines.push(text);
-        tellGroup = true;
-      }
-    }
+    const text = effectText(e, activity.time);
+    if (!text) continue;
+    lines.push(text);
+    const inline = e.type === 'promoted' || e.type === 'starterChanged';
+    for (const id of recipients(e, signups)) (inline ? named : others).add(id);
   }
-  const group = signups
-    .filter((s) => s.status === 'confirmed' || s.status === 'tentative')
-    .map((s) => s.userId);
-  if (tellGroup && group.length > 0) {
-    lines.push(group.map((id) => `<@${id}>`).join(' '));
-    group.forEach((id) => users.add(id));
-  }
-  if (users.size === 0) return null;
-  return { content: lines.join('\n'), allowedMentions: { users: [...users] } };
+  named.forEach((id) => others.delete(id));
+  if (named.size + others.size === 0) return [];
+  return [
+    { content: lines.join('\n'), allowedMentions: { users: [...named] } },
+    ...mentionChunks([...others]),
+  ];
 }
 
 export function createPublisher(
@@ -93,7 +120,12 @@ export function createPublisher(
 
   return async (r) => {
     // Re-read so the post shows the latest stored state and the stored ids are current.
-    const view = (await activities.get(r.activity.id)) ?? r;
+    let view: ActivityView = r;
+    try {
+      view = (await activities.get(r.activity.id)) ?? r;
+    } catch (err) {
+      console.error('publish: re-read', r.activity.id, err);
+    }
     const { activity, signups } = view;
 
     let post: Message | undefined;
@@ -104,16 +136,22 @@ export function createPublisher(
     }
 
     try {
-      const note = threadNote(view, r.effects);
-      if (note) await (await groupThread(view, post)).send(note);
+      const messages = threadMessages(view, r.effects);
+      if (messages.length > 0) {
+        const thread = await groupThread(view, post);
+        for (const m of messages) await thread.send(m);
+      }
     } catch (err) {
       console.error('publish: thread', activity.id, err);
     }
 
     try {
       if (r.effects.some((e) => e.type === 'filled')) {
-        if (!post) throw new Error('no post to link to');
-        const content = `✅ Your group "${activity.title}" is full: ${post.url}`;
+        const { guildId, channelId, messageId } = activity;
+        const url =
+          post?.url ?? (channelId && messageId && messageLink(channelId, messageId, guildId));
+        if (!url) throw new Error('no post to link to');
+        const content = `✅ Your group "${activity.title}" is full: ${url}`;
         // A member who blocks direct messages still has the thread mention; not an error.
         await Promise.allSettled(
           signups

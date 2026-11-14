@@ -91,6 +91,29 @@ describe('renderActivity', () => {
     expect(r.content).not.toContain('**x**');
   });
 
+  it('escapes masked links and headings', () => {
+    const r = renderActivity(
+      view({ kind: 'event', slots: { participant: null }, description: '# Big' }, [
+        { role: 'participant', label: '[Free gold](https://x.yz)' },
+      ]),
+    );
+    expect(r.content).toContain('\\[Free gold](https://x.yz)');
+    expect(r.content).toContain('\\# Big');
+  });
+
+  it('renders 2000 signups within 100 ms and 2000 characters', () => {
+    const signups = Array.from({ length: 2000 }, (_, n) => ({
+      role: 'participant' as const,
+      label: `Member ${n + 1}, Warrior 60`,
+    }));
+    const v = view({ kind: 'event', slots: { participant: null } }, signups);
+    const start = performance.now();
+    const r = renderActivity(v);
+    expect(performance.now() - start).toBeLessThan(100);
+    expect(r.content.length).toBeLessThanOrEqual(2000);
+    expect(r.content).toContain('more');
+  });
+
   it('stays within 2000 characters for 400 signups', () => {
     const signups = Array.from({ length: 400 }, (_, n) => ({
       role: 'participant' as const,
