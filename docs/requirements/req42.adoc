@@ -109,11 +109,15 @@ Each epic matches one goal of version 1. Story ids use these prefixes: `DF` dung
 * The bot posts in the configured group-finder channel. The post shows title, starter, time, one line per role with filled and total slots and the names of members, and a waitlist line.
 * The starter always takes a slot with the chosen role.
 
+Status: implemented in v1.
+
 *DF-2 Join by role.* As a member I click a role button to join.
 
 * A member with one character on their profile is shown with that character. With several characters the bot asks privately which one. With no profile the member joins showing their Discord name.
 * A member has at most one signup per activity. Clicking another role moves them.
 * Role is always chosen at signup and never derived from class.
+
+Status: implemented in v1.
 
 *DF-3 Waitlist and promotion.* As a member I am put on a waitlist when my role is full, so that I get a place when one frees up.
 
@@ -122,11 +126,15 @@ Each epic matches one goal of version 1. Story ids use these prefixes: `DF` dung
 * A full activity that loses a member goes back to open. When it fills again, a short "full again" note goes to the thread only, with no direct messages.
 * Two simultaneous clicks cannot overfill a slot.
 
+Status: implemented in v1.
+
 *DF-4 Full notification.* As a signed-up member I am told when the group is full.
 
 * When every slot is filled the bot mentions all members in the post's thread and sends each a direct message.
 * The thread is created the first time the bot has something to tell the group (full, reminder, time change, cancellation) and reused afterwards.
 * A member who blocks direct messages still gets the thread mention. A failed direct message is not an error.
+
+Status: implemented in v1.
 
 *DF-5 Choose when.* As a starter I choose a date and time, "as soon as possible", or "flexible".
 
@@ -135,6 +143,8 @@ Each epic matches one goal of version 1. Story ids use these prefixes: `DF` dung
 * "Flexible" has no time yet. When full, the group agrees a time in the thread. The starter can set a time later, which then schedules reminders. An unfilled flexible activity closes after 7 days *(call)*.
 * The 2-hour and 7-day limits count from posting and apply while the activity is open, including activities that were full and reopened.
 
+Status: implemented in v1.
+
 *DF-6 Reminders.* As a signed-up member I get a reminder before the start.
 
 * A reminder goes to the thread, mentioning the members, at the template's offsets. The default for a dungeon is 15 minutes before.
@@ -142,19 +152,27 @@ Each epic matches one goal of version 1. Story ids use these prefixes: `DF` dung
 * The reminder offsets in force when the activity is posted are copied onto it. Later changes to settings or templates do not affect activities already posted *(call)*.
 * A timed activity that is not full at its start time continues to "finished"; the reminder still goes to whoever is signed up.
 
+Status: implemented in v1.
+
 *DF-7 Cancel or reschedule.* As a starter (or an officer) I can cancel the activity or change its time.
 
 * Signed-up members are notified in the thread or, if none exists, by a mention on the post.
 * A time change reschedules the reminders.
+
+Status: implemented in v1.
 
 *DF-8 Starter leaves.* As a group I want the activity to continue when the starter leaves.
 
 * If the starter leaves, the longest-signed member becomes starter *(call)*.
 * If no one is left, the activity closes.
 
+Status: implemented in v1.
+
 *DF-9 Finish.* As a member I see that an activity is over.
 
 * Three hours after the start time the post is marked finished and its buttons are removed *(call)*. For an activity with no time, three hours after it became full.
+
+Status: implemented in v1.
 
 === Epic RF: Raid finder
 
@@ -164,20 +182,28 @@ Each epic matches one goal of version 1. Story ids use these prefixes: `DF` dung
 * A date and time is required *(call)*.
 * Slots are by role and raid-sized, taken from the chosen template. A raid starter chooses whether to sign up; "starter" is then only the person who may cancel or edit.
 
+Status: implemented in v1.
+
 *RF-2 Sign up by role.* As a member I sign up with a role, as for dungeons (DF-2, DF-3).
 
 * The waitlist works as for dungeons.
 * A raid with no signups stays open until its time. The starter hand-over rule (DF-8) applies only to dungeons.
+
+Status: implemented in v1.
 
 *RF-3 Tentative and can't come.* As a member I say that I am tentative or cannot come.
 
 * The post has additional *Tentative* and *Can't come* buttons.
 * These are shown as separate lists and do not occupy slots.
 
+Status: implemented in v1.
+
 *RF-4 Raid reminders and full notification.* As a signed-up member I am reminded before the raid.
 
 * Reminders go out 24 hours and 1 hour before, and mention confirmed and tentative members.
 * The "full" notification is sent when all slots are filled, as for dungeons.
+
+Status: implemented in v1.
 
 === Epic EV: Event planner
 
@@ -187,15 +213,21 @@ Each epic matches one goal of version 1. Story ids use these prefixes: `DF` dung
 * Events have no templates; everything comes from the form *(call)*.
 * An event starter chooses whether to sign up.
 
+Status: implemented in v1.
+
 *EV-2 Join and leave.* As a member I join or leave an event with a single *Join* / *Leave* pair of buttons.
 
 * The post shows the description and the list of people coming. The only role is Participant.
 * A capped event uses the waitlist as in DF-3. An unlimited event never becomes full.
 
+Status: implemented in v1.
+
 *EV-3 Event reminder.* As a participant I get a reminder.
 
 * One reminder goes to the thread 1 hour before *(call)*. Unlimited events send only this reminder.
 * An event with no signups stays open until its time (or until it expires, see DF-5).
+
+Status: implemented in v1.
 
 === Epic PR: Character profiles
 

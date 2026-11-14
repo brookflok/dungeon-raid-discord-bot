@@ -6,6 +6,7 @@ import type {
   Character,
   GuildConfig,
   Job,
+  Kind,
   LinkToken,
   Member,
   Signup,
@@ -200,6 +201,22 @@ export class SqliteStorage implements Storage {
 
   getActivity(id: string): Promise<Activity | null> {
     const r = this.db.prepare('SELECT * FROM activities WHERE id = ?').get(id) as Row | undefined;
+    return Promise.resolve(r ? toActivity(r) : null);
+  }
+
+  findOpenActivities(guildId: string, kind: Kind, starterId: string): Promise<Activity[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM activities WHERE guild_id = ? AND kind = ? AND starter_id = ?
+           AND state IN ('open', 'full') ORDER BY created_at DESC, rowid DESC`,
+      )
+      .all(guildId, kind, starterId) as Row[];
+    return Promise.resolve(rows.map(toActivity));
+  }
+
+  findActivityByMessage(messageId: string): Promise<Activity | null> {
+    const r = this.db.prepare('SELECT * FROM activities WHERE message_id = ?').get(messageId) as
+      Row | undefined;
     return Promise.resolve(r ? toActivity(r) : null);
   }
 

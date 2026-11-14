@@ -268,6 +268,28 @@ export class ActivityService {
     return { activity, signups: await this.storage.listSignups(activityId) };
   }
 
+  /**
+   * The activity a cancel or time command is about: the one posted as `messageId` when given,
+   * otherwise the user's most recent open activity of that kind. Permission is checked later.
+   */
+  async findTarget(
+    guildId: string,
+    kind: Kind,
+    userId: string,
+    messageId?: string,
+  ): Promise<Activity> {
+    if (messageId) {
+      const a = await this.storage.findActivityByMessage(messageId);
+      if (!a || a.guildId !== guildId || a.kind !== kind) {
+        throw new UserError(`That is not a link to a ${kind} post.`);
+      }
+      return a;
+    }
+    const [newest] = await this.storage.findOpenActivities(guildId, kind, userId);
+    if (!newest) throw new UserError(`You have no open ${kind}.`);
+    return newest;
+  }
+
   private async requireActivity(activityId: string): Promise<Activity> {
     const activity = await this.storage.getActivity(activityId);
     if (!activity) throw new UserError('That group no longer exists.');

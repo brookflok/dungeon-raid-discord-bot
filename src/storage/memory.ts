@@ -4,6 +4,7 @@ import type {
   Character,
   GuildConfig,
   Job,
+  Kind,
   LinkToken,
   Member,
   Signup,
@@ -34,6 +35,26 @@ export class MemoryStorage implements Storage {
 
   getActivity(id: string): Promise<Activity | null> {
     const a = this.activities.get(id);
+    return Promise.resolve(a ? copy(a) : null);
+  }
+
+  findOpenActivities(guildId: string, kind: Kind, starterId: string): Promise<Activity[]> {
+    return Promise.resolve(
+      [...this.activities.values()]
+        .filter(
+          (a) =>
+            a.guildId === guildId &&
+            a.kind === kind &&
+            a.starterId === starterId &&
+            (a.state === 'open' || a.state === 'full'),
+        )
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .map(copy),
+    );
+  }
+
+  findActivityByMessage(messageId: string): Promise<Activity | null> {
+    const a = [...this.activities.values()].find((x) => x.messageId === messageId);
     return Promise.resolve(a ? copy(a) : null);
   }
 

@@ -107,6 +107,40 @@ export function storageContract(name: string, make: () => Promise<Storage>): voi
         expect((await s.getActivity('a1'))!.title).toBe('Deadmines');
         expect((await s.getActivity('a1'))!.slots.tank).toBe(1);
       });
+
+      it('findOpenActivities returns open and full ones of that starter and kind, newest first', async () => {
+        const at = (hour: string) => ({ createdAt: d(`2026-11-14T${hour}:00:00Z`) });
+        const newest = activity('new', { type: 'asap' }, { ...at('12'), state: 'full' });
+        await s.insertActivity(activity('old', { type: 'asap' }, at('10')));
+        await s.insertActivity(newest);
+        await s.insertActivity(activity('mid', { type: 'asap' }, at('11')));
+        for (const state of ['finished', 'cancelled', 'expired'] as const) {
+          await s.insertActivity(activity(state, { type: 'asap' }, { ...at('13'), state }));
+        }
+        await s.insertActivity(activity('raid', { type: 'asap' }, { ...at('13'), kind: 'raid' }));
+        await s.insertActivity(
+          activity('theirs', { type: 'asap' }, { ...at('13'), starterId: 'u2' }),
+        );
+        await s.insertActivity(
+          activity('elsewhere', { type: 'asap' }, { ...at('13'), guildId: 'g2' }),
+        );
+
+        const found = await s.findOpenActivities('g1', 'dungeon', 'u1');
+        expect(found.map((a) => a.id)).toEqual(['new', 'mid', 'old']);
+        expect(found[0]).toEqual(newest);
+        expect(await s.findOpenActivities('g1', 'event', 'u1')).toEqual([]);
+      });
+
+      it('findActivityByMessage returns the activity posted as that message, or null', async () => {
+        const posted = activity('a1', { type: 'asap' }, { channelId: 'c1', messageId: 'm1' });
+        await s.insertActivity(posted);
+        await s.insertActivity(
+          activity('a2', { type: 'asap' }, { channelId: 'c1', messageId: 'm2' }),
+        );
+        await s.insertActivity(activity('a3', { type: 'asap' }));
+        expect(await s.findActivityByMessage('m1')).toEqual(posted);
+        expect(await s.findActivityByMessage('nope')).toBeNull();
+      });
     });
 
     describe('signups', () => {

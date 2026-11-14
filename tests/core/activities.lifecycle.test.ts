@@ -218,3 +218,41 @@ describe('ActivityService lifecycle', () => {
     expect((await svc.get(id))!.activity.state).toBe('open');
   });
 });
+
+describe('ActivityService.findTarget', () => {
+  it("without a message id picks the user's most recent open activity of that kind", async () => {
+    const older = await asapDungeon();
+    clock.set(new Date('2026-11-14T12:05:00Z'));
+    const newer = await asapDungeon();
+    clock.set(new Date('2026-11-14T12:10:00Z'));
+    await timedEvent(false);
+    expect((await svc.findTarget('g1', 'dungeon', 'u1')).id).toBe(newer);
+    await svc.cancel(newer, starter);
+    expect((await svc.findTarget('g1', 'dungeon', 'u1')).id).toBe(older);
+  });
+
+  it('without a message id rejects a user with no open activity of that kind', async () => {
+    await asapDungeon();
+    await expect(svc.findTarget('g1', 'raid', 'u1')).rejects.toThrow('You have no open raid.');
+    await expect(svc.findTarget('g1', 'dungeon', 'u2')).rejects.toThrow(
+      'You have no open dungeon.',
+    );
+  });
+
+  it('with a message id picks that post, whoever started it', async () => {
+    const id = await asapDungeon();
+    await svc.setPost(id, { channelId: 'c1', messageId: 'm1' });
+    expect((await svc.findTarget('g1', 'dungeon', 'o1', 'm1')).id).toBe(id);
+  });
+
+  it('with a message id rejects an unknown post or one of another kind or guild', async () => {
+    const id = await asapDungeon();
+    await svc.setPost(id, { channelId: 'c1', messageId: 'm1' });
+    const wrong = 'That is not a link to a raid post.';
+    await expect(svc.findTarget('g1', 'raid', 'u1', 'm1')).rejects.toThrow(wrong);
+    await expect(svc.findTarget('g1', 'raid', 'u1', 'nope')).rejects.toThrow(wrong);
+    await expect(svc.findTarget('g2', 'dungeon', 'u1', 'm1')).rejects.toThrow(
+      'That is not a link to a dungeon post.',
+    );
+  });
+});

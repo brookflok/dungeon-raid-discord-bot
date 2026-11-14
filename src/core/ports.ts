@@ -3,6 +3,7 @@ import type {
   Character,
   GuildConfig,
   Job,
+  Kind,
   LinkToken,
   Member,
   Signup,
@@ -17,6 +18,8 @@ export interface Storage {
   insertActivity(a: Activity): Promise<void>;
   updateActivity(a: Activity): Promise<void>;
   getActivity(id: string): Promise<Activity | null>;
+  findOpenActivities(guildId: string, kind: Kind, starterId: string): Promise<Activity[]>; // open or full, newest first
+  findActivityByMessage(messageId: string): Promise<Activity | null>;
   listSignups(activityId: string): Promise<Signup[]>; // ordered by createdAt
   upsertSignup(s: Signup): Promise<void>;
   deleteSignup(activityId: string, userId: string): Promise<void>;
