@@ -4,12 +4,10 @@ import {
   MessageFlags,
   ModalBuilder,
   SlashCommandBuilder,
-  type BaseInteraction,
 } from 'discord.js';
-import type { Actor } from '../core/activities.js';
 import { UserError, type Role } from '../core/types.js';
 import { posted } from '../discord/posted.js';
-import { actorOf, type BotModule, type Services } from '../discord/registry.js';
+import { actorOf, requireHost, type BotModule, type Services } from '../discord/registry.js';
 import { dayField, hourMinuteFields, readFormTime } from '../discord/time-form.js';
 import {
   ROLE_OPTIONS,
@@ -24,13 +22,7 @@ import {
   timeSubcommand,
 } from './shared-options.js';
 
-async function officer(i: BaseInteraction, s: Services): Promise<Actor> {
-  const actor = await actorOf(i, s);
-  if (!actor.isOfficer) throw new UserError('Only officers can post raids.');
-  return actor;
-}
-
-/** The form: raid, day, hour, minutes, and optionally the officer's own role. */
+/** The form: raid, day, hour, minutes, and optionally the host's own role. */
 async function form(s: Services, guildId: string): Promise<ModalBuilder> {
   const config = await s.config.get(guildId);
   requireChannel(config, 'raid');
@@ -65,23 +57,23 @@ export const raids: BotModule = {
 
   async onCommand(i, s) {
     if (i.options.getSubcommand() === 'post') {
-      await officer(i, s);
+      await requireHost(i, s, 'raid');
       await i.showModal(await form(s, i.guildId!)); // the acknowledgement; the rest is in onModal
       return;
     }
     await i.deferReply({ flags: MessageFlags.Ephemeral });
-    await manageTarget(i, s, 'raid', await officer(i, s));
+    await manageTarget(i, s, 'raid', await actorOf(i, s));
   },
 
   /** `raid:post`, the panel button. */
   async onComponent(i, s) {
-    await officer(i, s);
+    await requireHost(i, s, 'raid');
     await i.showModal(await form(s, i.guildId!));
   },
 
   async onModal(i, s) {
     await i.deferReply({ flags: MessageFlags.Ephemeral });
-    const actor = await officer(i, s);
+    await requireHost(i, s, 'raid');
     const guildId = i.guildId!; // guild-only form
     const config = await s.config.get(guildId);
     requireChannel(config, 'raid');
@@ -98,13 +90,13 @@ export const raids: BotModule = {
       guildId,
       kind: 'raid',
       title: raid.title,
-      starter: { userId: actor.userId, label },
+      starter: { userId: i.user.id, label },
       time,
       slots: raid.slots,
       reminderOffsetsMin: raid.reminderOffsetsMin,
     });
     if (role) {
-      result = await s.activities.signUp(result.activity.id, actor.userId, { role, label });
+      result = await s.activities.signUp(result.activity.id, i.user.id, { role, label });
     }
     await i.editReply(await posted(s, i.user.id, result, await publishNew(s, result)));
   },

@@ -30,6 +30,29 @@ describe('ConfigService', () => {
     expect(await cfg.isOfficer('g', { roleIds: ['r2'], isAdmin: false })).toBe(false);
   });
 
+  it('canHost: without host roles anyone hosts dungeons and events, officers host raids', async () => {
+    const cfg = setup();
+    const member = { roleIds: ['r1'], isAdmin: false };
+    expect(await cfg.canHost('g', 'dungeon', member)).toBe(true);
+    expect(await cfg.canHost('g', 'event', member)).toBe(true);
+    expect(await cfg.canHost('g', 'raid', member)).toBe(false);
+    expect(await cfg.canHost('g', 'raid', { roleIds: [], isAdmin: true })).toBe(true);
+  });
+
+  it('canHost: a kind with host roles is for those roles and officers', async () => {
+    const cfg = setup();
+    await cfg.update('g', {
+      officerRoleIds: ['officer'],
+      hostRoleIds: { raid: ['lead'], event: ['planner'] },
+    });
+    const has = (role: string) => ({ roleIds: [role], isAdmin: false });
+    expect(await cfg.canHost('g', 'raid', has('lead'))).toBe(true);
+    expect(await cfg.canHost('g', 'raid', has('planner'))).toBe(false);
+    expect(await cfg.canHost('g', 'event', has('lead'))).toBe(false);
+    expect(await cfg.canHost('g', 'event', has('officer'))).toBe(true);
+    expect(await cfg.canHost('g', 'dungeon', has('nobody'))).toBe(true);
+  });
+
   it('update persists and merges', async () => {
     const cfg = setup();
     await cfg.update('g', { timezone: 'America/New_York' });

@@ -14,7 +14,7 @@ import type { ConfigService } from '../core/config.js';
 import type { Clock } from '../core/ports.js';
 import type { ProfileService } from '../core/profiles.js';
 import type { TemplateService } from '../core/templates.js';
-import { UserError } from '../core/types.js';
+import { UserError, type Kind } from '../core/types.js';
 import type { Env } from '../env.js';
 import { log } from '../log.js';
 import { notice } from './notice.js';
@@ -84,12 +84,27 @@ export function createRouter(modules: BotModule[], s: Services): (i: Interaction
   };
 }
 
+function rolesOf(i: BaseInteraction): { roleIds: string[]; isAdmin: boolean } {
+  const roles = i.member?.roles ?? [];
+  const roleIds = Array.isArray(roles) ? roles : [...roles.cache.keys()];
+  const isAdmin = i.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false;
+  return { roleIds, isAdmin };
+}
+
 /** Who is acting; officers per ConfigService.isOfficer (officer role or server administrator). */
 export async function actorOf(i: BaseInteraction, s: Services): Promise<Actor> {
   const userId = i.user.id;
   if (!i.guildId || !i.member) return { userId, isOfficer: false };
-  const roles = i.member.roles;
-  const roleIds = Array.isArray(roles) ? roles : [...roles.cache.keys()];
-  const isAdmin = i.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false;
-  return { userId, isOfficer: await s.config.isOfficer(i.guildId, { roleIds, isAdmin }) };
+  return { userId, isOfficer: await s.config.isOfficer(i.guildId, rolesOf(i)) };
+}
+
+/** Refuses members who may not host this kind, per ConfigService.canHost. */
+export async function requireHost(i: BaseInteraction, s: Services, kind: Kind): Promise<void> {
+  const guildId = i.guildId!; // hosting is guild-only
+  if (await s.config.canHost(guildId, kind, rolesOf(i))) return;
+  const roles = (await s.config.get(guildId)).hostRoleIds[kind] ?? [];
+  const who = roles.length
+    ? `members with ${roles.map((r) => `<@&${r}>`).join(', ')} and officers`
+    : 'officers';
+  throw new UserError(`Only ${who} can host ${kind === 'event' ? 'an' : 'a'} ${kind}.`);
 }

@@ -267,6 +267,7 @@ export function storageContract(name: string, make: () => Promise<Storage>): voi
           guildId: 'g1',
           channels: { dungeon: 'c1', raid: 'c2' },
           officerRoleIds: ['r1', 'r2'],
+          hostRoleIds: { raid: ['r3'] },
           reminders: { dungeon: [15], raid: [1440, 60], event: [60] },
           timezone: 'Europe/Berlin',
         };

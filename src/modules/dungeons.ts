@@ -7,7 +7,7 @@ import {
 } from 'discord.js';
 import type { Role } from '../core/types.js';
 import { posted } from '../discord/posted.js';
-import { actorOf, type BotModule, type Services } from '../discord/registry.js';
+import { actorOf, requireHost, type BotModule, type Services } from '../discord/registry.js';
 import { dayField, hourMinuteFields, readFormTime } from '../discord/time-form.js';
 import {
   ROLE_OPTIONS,
@@ -60,6 +60,7 @@ export const dungeons: BotModule = {
 
   async onCommand(i, s) {
     if (i.options.getSubcommand() === 'start') {
+      await requireHost(i, s, 'dungeon');
       await i.showModal(await form(s, i.guildId!)); // the acknowledgement; the rest is in onModal
       return;
     }
@@ -69,11 +70,13 @@ export const dungeons: BotModule = {
 
   /** `dungeon:start`, the panel button. */
   async onComponent(i, s) {
+    await requireHost(i, s, 'dungeon');
     await i.showModal(await form(s, i.guildId!));
   },
 
   async onModal(i, s) {
     await i.deferReply({ flags: MessageFlags.Ephemeral });
+    await requireHost(i, s, 'dungeon');
     const guildId = i.guildId!; // guild-only form
     const config = await s.config.get(guildId);
     requireChannel(config, 'dungeon');

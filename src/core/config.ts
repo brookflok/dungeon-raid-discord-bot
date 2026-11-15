@@ -24,6 +24,7 @@ export class ConfigService {
         guildId,
         channels: {},
         officerRoleIds: [],
+        hostRoleIds: {},
         reminders: structuredClone(DEFAULT_REMINDERS),
         timezone: 'Europe/Berlin',
       }
@@ -49,5 +50,16 @@ export class ConfigService {
     if (who.isAdmin) return true;
     const { officerRoleIds } = await this.get(guildId);
     return who.roleIds.some((r) => officerRoleIds.includes(r));
+  }
+
+  /** Officers always; otherwise the kind's host roles, or without any: everyone except for raids. */
+  async canHost(
+    guildId: string,
+    kind: Kind,
+    who: { roleIds: string[]; isAdmin: boolean },
+  ): Promise<boolean> {
+    if (await this.isOfficer(guildId, who)) return true;
+    const roles = (await this.get(guildId)).hostRoleIds[kind] ?? [];
+    return roles.length ? who.roleIds.some((r) => roles.includes(r)) : kind !== 'raid';
   }
 }

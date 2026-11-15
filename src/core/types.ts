@@ -51,6 +51,7 @@ export interface GuildConfig {
   guildId: string;
   channels: Partial<Record<Kind | 'log', string>>; // log: where finished activities are moved
   officerRoleIds: string[];
+  hostRoleIds: Partial<Record<Kind, string[]>>; // who may host a kind besides officers
   reminders: Record<Kind, number[]>;
   timezone: string;
 }

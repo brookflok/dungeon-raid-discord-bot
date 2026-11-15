@@ -341,6 +341,7 @@ export class SqliteStorage implements Storage {
             guildId: r.guild_id as string,
             channels: parse(r.channels),
             officerRoleIds: parse(r.officer_role_ids),
+            hostRoleIds: parse(r.host_role_ids),
             reminders: parse(r.reminders),
             timezone: r.timezone as string,
           }
@@ -351,16 +352,18 @@ export class SqliteStorage implements Storage {
   saveConfig(c: GuildConfig): Promise<void> {
     this.db
       .prepare(
-        `INSERT INTO guild_config (guild_id, channels, officer_role_ids, reminders, timezone)
-         VALUES (@guildId, @channels, @officers, @reminders, @timezone)
+        `INSERT INTO guild_config
+           (guild_id, channels, officer_role_ids, host_role_ids, reminders, timezone)
+         VALUES (@guildId, @channels, @officers, @hosts, @reminders, @timezone)
          ON CONFLICT (guild_id) DO UPDATE SET channels = excluded.channels,
-           officer_role_ids = excluded.officer_role_ids, reminders = excluded.reminders,
-           timezone = excluded.timezone`,
+           officer_role_ids = excluded.officer_role_ids, host_role_ids = excluded.host_role_ids,
+           reminders = excluded.reminders, timezone = excluded.timezone`,
       )
       .run({
         guildId: c.guildId,
         channels: json(c.channels),
         officers: json(c.officerRoleIds),
+        hosts: json(c.hostRoleIds),
         reminders: json(c.reminders),
         timezone: c.timezone,
       });

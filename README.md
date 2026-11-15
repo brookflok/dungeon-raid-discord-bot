@@ -13,10 +13,10 @@ A Discord bot for a World of Warcraft: Forever guild. Members find dungeon group
 | Command                                                                  | Who      | What it does                                         |
 | ------------------------------------------------------------------------ | -------- | ---------------------------------------------------- |
 | `/dungeon start`, `cancel`, `time`                                       | everyone | Start a dungeon group, cancel it, or change its time |
-| `/raid post`, `cancel`, `time`                                           | officers | Post a raid, cancel it, or change its time           |
+| `/raid post`, `cancel`, `time`                                           | raid hosts | Post a raid, cancel it, or change its time           |
 | `/event post`, `cancel`, `time`                                          | everyone | Post an event, cancel it, or change its time         |
 | `/profile link`, `refresh`, `add`, `show`, `main`, `remove`              | everyone | Link Battle.net and manage characters                |
-| `/config channels`, `officers`, `reminders`, `timezone`, `panel`, `show` | officers | Server settings                                      |
+| `/config channels`, `officers`, `hosts`, `reminders`, `timezone`, `panel`, `show` | officers | Server settings                                      |
 | `/template add`, `edit`, `disable`, `enable`, `list`                     | officers | Manage the dungeon and raid lists                    |
 
 The bot starts with 20 dungeons and 7 raids.
@@ -105,9 +105,11 @@ As a server administrator:
 /config panel kind:dungeon
 /config panel kind:raid
 /config panel kind:event
+/config panel kind:all
+/config hosts kind:raid role:@Raid Leader action:add
 ```
 
-`/config panel` posts a box with buttons ("Start a dungeon group", "My characters", "Link Battle.net") in that kind's channel, so members do not need to know the slash commands. The bot registers its slash commands itself each time it starts.
+`/config panel` posts a box with buttons ("Start a dungeon group", "My characters", "Link Battle.net") in that kind's channel, so members do not need to know the slash commands. `/config panel kind:all` posts one box with "Host a dungeon", "Host a raid" and "Host an event" in the channel where you run it. `/config hosts` sets which roles may host a kind besides officers; without a host role, everyone can host dungeons and events and only officers can host raids. The bot registers its slash commands itself each time it starts.
 
 The log channel is where finished groups are moved: the starter (or an officer) presses **Finish** on the post or in the group's thread, picks a result (completed, failed, did not happen) and can add a report. Groups nobody finishes are moved there 3 hours after their start with a mention of the starter and an **Add result** button.
 

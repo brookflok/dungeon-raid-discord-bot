@@ -24,6 +24,7 @@ let raidId: string;
 let published: ActivityResult[];
 
 beforeEach(async () => {
+  member = admin;
   const storage = new MemoryStorage();
   const clock = { now: () => now };
   const config = new ConfigService(storage);
@@ -51,12 +52,21 @@ beforeEach(async () => {
   raidId = (await templates.add({ guildId: 'g1', kind: 'raid', name: 'Molten Core', slots })).id;
 });
 
-const member = {
+const admin = {
   guildId: 'g1',
   user: { id: 'u1', displayName: 'Damir' },
   member: { roles: [], displayName: 'Damir' },
   memberPermissions: { has: () => true },
   inCachedGuild: () => false,
+};
+let member = admin;
+/** Acts as a member who is not an administrator and has these roles. */
+const actAs = (...roles: string[]): void => {
+  member = {
+    ...admin,
+    member: { ...admin.member, roles: roles as never[] },
+    memberPermissions: { has: () => false },
+  };
 };
 
 /** Clicks a button and returns the form it opened, as Discord would receive it. */
@@ -140,6 +150,56 @@ describe('forms', () => {
       expect(p.embeds[0]?.title).toBeTruthy();
       expect(p.components).toHaveLength(2);
     }
+  });
+
+  it('builds the host panel with a button for every kind', () => {
+    const p = panel('all');
+    expect(p.embeds[0]?.title).toBe('🎮 Host an activity');
+    expect(p.components[0]?.components.map((b) => 'customId' in b && b.customId)).toEqual([
+      'dungeon:start',
+      'raid:post',
+      'event:post',
+    ]);
+  });
+});
+
+describe('host roles', () => {
+  const raid = { raid: '', day: '2026-11-20', hour: '20', minute: '00' };
+
+  it('lets any member host a dungeon or an event and refuses a raid', async () => {
+    actAs();
+    expect((await opened(dungeons)).custom_id).toBe('dungeon:start');
+    expect((await opened(events)).custom_id).toBe('event:post');
+    await expect(opened(raids)).rejects.toThrow('Only officers can host a raid.');
+    await expect(submitted(raids, { ...raid, raid: raidId })).rejects.toThrow(
+      'Only officers can host a raid.',
+    );
+  });
+
+  it('lets a member with the raid host role post a raid', async () => {
+    await s.config.update('g1', { hostRoleIds: { raid: ['lead'] } });
+    actAs('lead');
+    await opened(raids);
+    await submitted(raids, { ...raid, raid: raidId });
+    expect(published[0]!.activity.kind).toBe('raid');
+  });
+
+  it('refuses members without the host role of a kind, on the button and on the form', async () => {
+    await s.config.update('g1', { hostRoleIds: { dungeon: ['member'], event: ['planner'] } });
+    actAs('planner');
+    const refusal = 'Only members with <@&member> and officers can host a dungeon.';
+    await expect(opened(dungeons)).rejects.toThrow(refusal);
+    await expect(
+      submitted(dungeons, {
+        dungeon: dungeonId,
+        role: 'tank',
+        day: 'asap',
+        hour: '20',
+        minute: '00',
+      }),
+    ).rejects.toThrow(refusal);
+    expect((await opened(events)).custom_id).toBe('event:post');
+    expect(published).toEqual([]);
   });
 });
 

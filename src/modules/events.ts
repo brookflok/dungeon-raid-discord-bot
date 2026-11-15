@@ -9,7 +9,7 @@ import {
 } from 'discord.js';
 import { UserError } from '../core/types.js';
 import { posted } from '../discord/posted.js';
-import { actorOf, type BotModule, type Services } from '../discord/registry.js';
+import { actorOf, requireHost, type BotModule, type Services } from '../discord/registry.js';
 import { dayField, halfHourField, readFormTime } from '../discord/time-form.js';
 import {
   cancelSubcommand,
@@ -65,6 +65,7 @@ export const events: BotModule = {
 
   async onCommand(i, s) {
     if (i.options.getSubcommand() === 'post') {
+      await requireHost(i, s, 'event');
       await i.showModal(await form(s, i.guildId!)); // the acknowledgement; the rest is in onModal
       return;
     }
@@ -75,11 +76,13 @@ export const events: BotModule = {
 
   /** `event:post`, the panel button. */
   async onComponent(i, s) {
+    await requireHost(i, s, 'event');
     await i.showModal(await form(s, i.guildId!));
   },
 
   async onModal(i, s) {
     await i.deferReply({ flags: MessageFlags.Ephemeral });
+    await requireHost(i, s, 'event');
     const title = i.fields.getTextInputValue('title').trim();
     if (!title) throw new UserError('Enter a title.');
     const description = i.fields.getTextInputValue('description').trim();

@@ -172,7 +172,10 @@ Any other reverse proxy (nginx, Traefik, or the one your hosting provider offers
    /config panel kind:dungeon
    /config panel kind:raid
    /config panel kind:event
+   /config panel kind:all
    ```
+
+   `kind:all` posts one box with "Host a dungeon", "Host a raid" and "Host an event" in the channel where you run the command. To let a role host a kind besides officers, run for example `/config hosts kind:raid role:@Raid Leader action:add`. A kind without a host role keeps the default: everyone hosts dungeons and events, only officers host raids.
 
 7. Check everything with `/config show`. The dungeon and raid lists were filled automatically at the first start; `/template list kind:dungeon` and `/template list kind:raid` show them.
 
@@ -242,7 +245,8 @@ Results and log:
 
 Raid finder:
 
-- [ ] A member without the officer role runs `/raid post` and is refused with "Only officers can post raids."
+- [ ] A member without the officer role runs `/raid post` and is refused with "Only officers can host a raid."
+- [ ] Host role: after `/config hosts kind:raid role:@Raid Leader action:add`, a member with that role clicks **Host a raid** on the `/config panel kind:all` box and gets the form; a member without it is refused.
 - [ ] Tentative and Can't come: an officer posts a raid with `/raid post` (pick any raid and tomorrow 20:00). One account clicks **Tentative** and another **Can't come**; they are listed under "Tentative" and "Can't come". When one of them then clicks a role button, they move to that role.
 
 Event planner:

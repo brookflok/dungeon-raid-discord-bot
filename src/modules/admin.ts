@@ -53,10 +53,20 @@ function describeConfig(c: GuildConfig): string {
   const roles = c.officerRoleIds.length
     ? c.officerRoleIds.map((r) => `<@&${r}>`).join(', ')
     : 'none';
+  const hosts = KINDS.map((k) => {
+    const ids = c.hostRoleIds[k] ?? [];
+    const who = ids.length
+      ? ids.map((r) => `<@&${r}>`).join(', ')
+      : k === 'raid'
+        ? 'officers'
+        : 'everyone';
+    return `${k}: ${who}`;
+  }).join('; ');
   const reminders = KINDS.map((k) => `${k}: ${formatOffsets(c.reminders[k])}`).join('; ');
   return [
     `Post channels - ${channels}`,
     `Officer roles - ${roles} (server administrators are always officers)`,
+    `Hosts - ${hosts} (officers can always host)`,
     `Reminders - ${reminders}`,
     `Timezone - ${c.timezone}`,
   ].join('\n');
@@ -85,8 +95,9 @@ async function handleConfig(
   }
   const current = await s.config.get(guildId);
   if (sub === 'panel') {
-    const kind = i.options.getString('kind', true) as Kind;
-    const channelId = current.channels[kind];
+    const kind = i.options.getString('kind', true) as Kind | 'all';
+    // The host panel has no channel of its own; it goes where the command is used.
+    const channelId = kind === 'all' ? i.channelId : current.channels[kind];
     if (!channelId) throw new UserError(`Set the ${kind} channel first with /config channels.`);
     const channel = await i.client.channels.fetch(channelId).catch(() => null);
     if (!channel?.isSendable()) throw new UserError('I cannot send messages in that channel.');
@@ -114,6 +125,20 @@ async function handleConfig(
             officerRoleIds: add
               ? [...current.officerRoleIds, role]
               : current.officerRoleIds.filter((r) => r !== role),
+          });
+  } else if (sub === 'hosts') {
+    const kind = i.options.getString('kind', true) as Kind;
+    const role = i.options.getRole('role', true).id;
+    const roles = current.hostRoleIds[kind] ?? [];
+    const add = i.options.getString('action', true) === 'add';
+    next =
+      add === roles.includes(role)
+        ? current
+        : await s.config.update(guildId, {
+            hostRoleIds: {
+              ...current.hostRoleIds,
+              [kind]: add ? [...roles, role] : roles.filter((r) => r !== role),
+            },
           });
   } else if (sub === 'reminders') {
     const kind = i.options.getString('kind', true) as Kind;
@@ -214,6 +239,20 @@ export const admin: BotModule = {
       )
       .addSubcommand((c) =>
         c
+          .setName('hosts')
+          .setDescription('Add or remove a role that may host a kind (besides officers)')
+          .addStringOption(kindOption(KINDS))
+          .addRoleOption((o) => o.setName('role').setDescription('Role').setRequired(true))
+          .addStringOption((o) =>
+            o
+              .setName('action')
+              .setDescription('Add or remove')
+              .setRequired(true)
+              .addChoices({ name: 'add', value: 'add' }, { name: 'remove', value: 'remove' }),
+          ),
+      )
+      .addSubcommand((c) =>
+        c
           .setName('reminders')
           .setDescription('Set default reminder offsets for a kind')
           .addStringOption(kindOption(KINDS))
@@ -236,8 +275,8 @@ export const admin: BotModule = {
       .addSubcommand((c) =>
         c
           .setName('panel')
-          .setDescription('Post the panel with buttons in the channel of an activity kind')
-          .addStringOption(kindOption(KINDS)),
+          .setDescription('Post a panel with buttons: one kind in its channel, or "all" right here')
+          .addStringOption(kindOption([...KINDS, 'all'])),
       )
       .toJSON(),
     new SlashCommandBuilder()
