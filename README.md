@@ -1,0 +1,131 @@
+# Dungeon & Raid Discord Bot
+
+A Discord bot for a World of Warcraft: Forever guild. Members find dungeon groups, officers post raids, and anyone can plan a guild event, all with sign-up buttons on one post.
+
+- **Dungeon finder:** pick a dungeon, your role and a time (a date, "asap" or "flexible"). Others join as Tank, Healer or DPS. When the group is full, everyone is mentioned in a thread, gets a direct message, and is reminded before the start.
+- **Raid finder:** officers post a raid; members sign up by role, as tentative, or as absent. Extra sign-ups go on a waitlist and move up when a spot opens.
+- **Event planner:** a free-form event with a description and limited or unlimited spots.
+- **Character profiles:** members link their Battle.net account and sign up with their Forever character.
+
+## Commands
+
+| Command                                                         | Who      | What it does                                         |
+| --------------------------------------------------------------- | -------- | ---------------------------------------------------- |
+| `/dungeon start`, `cancel`, `time`                              | everyone | Start a dungeon group, cancel it, or change its time |
+| `/raid post`, `cancel`, `time`                                  | officers | Post a raid, cancel it, or change its time           |
+| `/event post`, `cancel`, `time`                                 | everyone | Post an event, cancel it, or change its time         |
+| `/profile link`, `refresh`, `add`, `show`, `main`, `remove`     | everyone | Link Battle.net and manage characters                |
+| `/config channels`, `officers`, `reminders`, `timezone`, `show` | officers | Server settings                                      |
+| `/template add`, `edit`, `disable`, `enable`, `list`            | officers | Manage the dungeon and raid lists                    |
+
+The bot starts with 20 dungeons and 7 raids.
+
+## Setup
+
+You need a Discord application, a Battle.net application, and a place to run the bot. The steps below are the short version; [docs/operations.md](docs/operations.md) explains each one in detail, including HTTPS, backups and updates.
+
+### 1. Create the Discord application
+
+1. Go to <https://discord.com/developers/applications> and create an application.
+2. Copy the **Application ID** (`DISCORD_APP_ID`).
+3. On the **Bot** page, reset and copy the token (`DISCORD_TOKEN`). Leave all privileged intents off.
+4. Under **OAuth2 → URL Generator**, tick the scopes `bot` and `applications.commands` and these permissions: View Channels, Send Messages, Send Messages in Threads, Create Public Threads, Embed Links, Read Message History.
+5. Open the generated URL and add the bot to your server.
+6. Copy your server ID (`GUILD_ID`): switch on Developer Mode in Discord, right-click the server icon, **Copy Server ID**.
+
+### 2. Create the Battle.net application
+
+1. Go to <https://develop.battle.net/access/clients> and create a client.
+2. Set the redirect URL to your bot's public address followed by `/callback`, for example `https://bot.example.org/callback`. For a local run, use `http://localhost:3050/callback`.
+3. Copy the client ID and secret (`BLIZZARD_CLIENT_ID`, `BLIZZARD_CLIENT_SECRET`).
+
+### 3. Fill in the settings
+
+```sh
+git clone https://github.com/brookflok/dungeon-raid-discord-bot.git
+cd dungeon-raid-discord-bot
+cp .env.example .env
+```
+
+Edit `.env`. Write each value directly after the `=`, without quotes.
+
+| Variable                 | Meaning                                   | Default           |
+| ------------------------ | ----------------------------------------- | ----------------- |
+| `DISCORD_TOKEN`          | Bot token                                 |                   |
+| `DISCORD_APP_ID`         | Application ID                            |                   |
+| `GUILD_ID`               | Your Discord server ID                    |                   |
+| `DATABASE_PATH`          | Where the SQLite file is stored           | `data/bot.sqlite` |
+| `PUBLIC_URL`             | Public address of the bot, without a path |                   |
+| `PORT`                   | Port of the bot's web server              | `3050`            |
+| `BLIZZARD_CLIENT_ID`     | Battle.net client ID                      |                   |
+| `BLIZZARD_CLIENT_SECRET` | Battle.net client secret                  |                   |
+| `BLIZZARD_REGION`        | `eu`, `us`, `kr` or `tw`                  | `eu`              |
+
+Never commit `.env`. It is excluded from git.
+
+### 4. Run it
+
+**With Docker (for a server):**
+
+```sh
+docker build -t guild-bot .
+mkdir -p data && sudo chown 1000:1000 data
+docker run -d --name guild-bot --restart unless-stopped \
+  --env-file .env \
+  -p 127.0.0.1:3050:3050 \
+  -v "$(pwd)/data:/app/data" \
+  guild-bot
+docker exec guild-bot npm run register
+```
+
+Battle.net linking needs the bot to be reachable over HTTPS at `PUBLIC_URL`. Put a reverse proxy such as Caddy in front of port 3050; see [section 6 of the operations guide](docs/operations.md#6-https-with-a-reverse-proxy).
+
+**Without Docker (for a local try-out, Node 24 or newer):**
+
+```sh
+npm ci
+npm run build
+npm run register
+node --env-file=.env dist/main.js
+```
+
+For a local run, set `PUBLIC_URL=http://localhost:3050`.
+
+Run only one bot process per database file.
+
+### 5. Configure the server in Discord
+
+As a server administrator:
+
+```
+/config channels kind:dungeon channel:#dungeon-groups
+/config channels kind:raid channel:#raids
+/config channels kind:event channel:#events
+/config officers role:@Officer action:add
+```
+
+Check the result with `/config show`. The default timezone for typed times is `Europe/Berlin`; change it with `/config timezone`.
+
+## Development
+
+```sh
+npm test          # run the tests
+npm run lint      # ESLint and Prettier
+npm run typecheck
+```
+
+The code is a modular monolith: `src/core` holds the rules with no Discord or database code, `src/modules` holds one module per feature, and `src/discord`, `src/storage`, `src/web` and `src/blizzard` connect the core to the outside. A new feature is a new module registered in `src/modules/index.ts`.
+
+## Documentation
+
+- [Operations guide](docs/operations.md): installation, HTTPS, backups, updates, manual test checklist
+- [Architecture (arc42)](docs/architecture/arc42.md)
+- [Requirements (req42)](docs/requirements/req42.adoc)
+
+## Status
+
+The automated tests pass. The manual test checklist in the operations guide has not yet been carried out against a live Discord server.
+
+## License
+
+[MIT](LICENSE)
