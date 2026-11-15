@@ -34,10 +34,11 @@ export async function relabel(s: Deps, userId: string, activityId: string): Prom
   }
 }
 
-/** After a Battle.net link: updates the post the link was started from, if any. */
+/**
+ * After a Battle.net link or a new main character: updates the post the link was started from,
+ * if any. The note is kept, so choosing the main right after linking updates the post again.
+ */
 export async function relabelPending(s: Deps, userId: string): Promise<void> {
   const activityId = pending.get(userId);
-  if (!activityId) return;
-  pending.delete(userId);
-  await relabel(s, userId, activityId);
+  if (activityId) await relabel(s, userId, activityId);
 }

@@ -70,8 +70,8 @@ const web = createWebServer({
     region: env.BLIZZARD_REGION,
     redirectUri: `${env.PUBLIC_URL}/callback`,
   }),
-  onLinked: async (userId, characters) => {
-    await notifyLinked(client)(userId, characters);
+  onLinked: async (userId) => {
+    await notifyLinked(client, profiles)(userId);
     await relabelPending(services, userId);
   },
 });

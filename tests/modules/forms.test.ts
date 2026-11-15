@@ -6,6 +6,7 @@ import { ProfileService } from '../../src/core/profiles.js';
 import { TemplateService } from '../../src/core/templates.js';
 import type { Services } from '../../src/discord/registry.js';
 import { manage } from '../../src/discord/manage.js';
+import { mainMenu } from '../../src/discord/notify-linked.js';
 import { panel } from '../../src/discord/panel.js';
 import { dungeons } from '../../src/modules/dungeons.js';
 import { events } from '../../src/modules/events.js';
@@ -225,5 +226,52 @@ describe('raid and event form flow', () => {
       type: 'at',
       at: new Date('2026-11-16T20:45:00Z'),
     });
+  });
+});
+
+describe('choosing the main character', () => {
+  /** Picks a character in the `profile:main` dropdown and returns the reply. */
+  async function picked(characterId: string) {
+    let reply: unknown;
+    const i = {
+      ...member,
+      isStringSelectMenu: () => true,
+      values: [characterId],
+      deferUpdate: async () => undefined,
+      editReply: async (r: unknown) => void (reply = r),
+    };
+    await profiles.onComponent!(i as unknown as MessageComponentInteraction, s, ['main']);
+    return reply as { embeds: { description?: string }[]; components: unknown[] };
+  }
+
+  it('sets the picked character as main and confirms', async () => {
+    await s.profiles.addManual('u1', { name: 'Thorin', className: 'Warrior', level: 24 });
+    const alt = await s.profiles.addManual('u1', { name: 'Lyra', className: 'Mage', level: 12 });
+    const reply = await picked(alt.id);
+    expect((await s.profiles.list('u1')).member?.mainCharacterId).toBe(alt.id);
+    expect(reply.embeds[0]?.description).toBe('Your main character is now **Lyra, Mage 12**.');
+    expect(reply.components).toEqual([]);
+  });
+
+  it('refuses a character of another member', async () => {
+    await s.profiles.addManual('u1', { name: 'Thorin', className: 'Warrior', level: 24 });
+    const other = await s.profiles.addManual('u2', { name: 'Kael', className: 'Rogue', level: 25 });
+    await expect(picked(other.id)).rejects.toThrow('That character is not on your profile.');
+  });
+
+  it('offers the characters in a dropdown with the current main preselected', async () => {
+    const main = await s.profiles.addManual('u1', {
+      name: 'Thorin',
+      className: 'Warrior',
+      level: 24,
+    });
+    const alt = await s.profiles.addManual('u1', { name: 'Lyra', className: 'Mage', level: 12 });
+    const { member: m, characters } = await s.profiles.list('u1');
+    const menu = mainMenu(characters, m?.mainCharacterId).components[0]!;
+    expect(menu.customId).toBe('profile:main');
+    expect(menu.options).toEqual([
+      { label: 'Thorin, Warrior 24', value: main.id, default: true },
+      { label: 'Lyra, Mage 12', value: alt.id, default: false },
+    ]);
   });
 });

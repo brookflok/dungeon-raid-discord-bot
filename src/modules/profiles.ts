@@ -15,7 +15,8 @@ import { CLASSES, characterLabel } from '../core/profiles.js';
 import { UserError } from '../core/types.js';
 import { button, linkButton, notice, row } from '../discord/notice.js';
 import type { BotModule, Services } from '../discord/registry.js';
-import { relabel, rememberPost } from '../discord/relabel.js';
+import { mainMenu } from '../discord/notify-linked.js';
+import { relabel, relabelPending, rememberPost } from '../discord/relabel.js';
 import { log } from '../log.js';
 
 const SHOWN = 40; // characters listed in one box
@@ -34,6 +35,16 @@ async function linkReply(s: Services, userId: string) {
   };
 }
 
+/** Sets the main character, updates the post a link was started from, and confirms. */
+async function mainSet(s: Services, userId: string, characterId: string) {
+  // ProfileService refuses a character that is not on this member's profile.
+  await s.profiles.setMain(userId, characterId);
+  await relabelPending(s, userId);
+  const { characters } = await s.profiles.list(userId);
+  const label = escapeMarkdown(characterLabel(characters[0]!)); // the main is listed first
+  return { ...notice(`Your main character is now **${label}**.`, 'ok'), components: [] };
+}
+
 /** The member's characters with buttons to link Battle.net or add one by name. */
 async function showReply(s: Services, userId: string) {
   const { member, characters } = await s.profiles.list(userId);
@@ -48,6 +59,7 @@ async function showReply(s: Services, userId: string) {
   return {
     ...notice(lines.join('\n'), 'info', '🧙 Your characters'),
     components: [
+      ...(characters.length > 1 ? [mainMenu(characters, member?.mainCharacterId)] : []),
       row(
         button(
           'profile:link',
@@ -144,8 +156,13 @@ export const profiles: BotModule = {
       .addSubcommand((c) =>
         c
           .setName('main')
-          .setDescription('Choose your main character')
-          .addStringOption(characterOption(true)),
+          .setDescription('Choose your main character from a list')
+          .addStringOption((o) =>
+            o
+              .setName('character')
+              .setDescription('Optional: type a name instead of using the list')
+              .setAutocomplete(true),
+          ),
       )
       .addSubcommand((c) =>
         c
@@ -190,9 +207,19 @@ export const profiles: BotModule = {
     } else if (sub === 'show') {
       await i.editReply(await showReply(s, userId));
     } else if (sub === 'main') {
-      // ProfileService refuses a character that is not on this member's profile.
-      await s.profiles.setMain(userId, i.options.getString('character', true));
-      await i.editReply(notice('Your main character is set.', 'ok'));
+      const characterId = i.options.getString('character');
+      if (characterId === null) {
+        const { member, characters } = await s.profiles.list(userId);
+        if (characters.length === 0) {
+          throw new UserError('You have no characters yet. Use /profile link or /profile add.');
+        }
+        await i.editReply({
+          ...notice('Your main character is the one shown when you sign up.', 'info'),
+          components: [mainMenu(characters, member?.mainCharacterId)],
+        });
+        return;
+      }
+      await i.editReply(await mainSet(s, userId, characterId));
     } else {
       const characterId = i.options.getString('character');
       if (characterId !== null) {
@@ -211,13 +238,16 @@ export const profiles: BotModule = {
   },
 
   /**
-   * `profile:removeall` (the confirmation of `/profile remove`), and from panels and
+   * `profile:removeall` (the confirmation of `/profile remove`), the `profile:main` dropdown, and from panels and
    * confirmations `profile:show`, `profile:link[:activityId]` and `profile:add[:activityId]`.
    */
   async onComponent(i, s, [action, activityId]) {
     const userId = i.user.id;
     if (action === 'add') {
       await i.showModal(addForm(activityId));
+    } else if (action === 'main' && i.isStringSelectMenu()) {
+      await i.deferUpdate();
+      await i.editReply(await mainSet(s, userId, i.values[0] ?? ''));
     } else if (action === 'removeall') {
       await i.deferUpdate();
       // The confirmation is ephemeral, so only the member it was shown to can click it; the data
