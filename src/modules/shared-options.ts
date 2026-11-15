@@ -1,9 +1,10 @@
-import type {
-  AutocompleteInteraction,
-  BaseInteraction,
-  ChatInputCommandInteraction,
-  SlashCommandStringOption,
-  SlashCommandSubcommandBuilder,
+import {
+  StringSelectMenuBuilder,
+  type APISelectMenuOption,
+  type BaseInteraction,
+  type ChatInputCommandInteraction,
+  type SlashCommandStringOption,
+  type SlashCommandSubcommandBuilder,
 } from 'discord.js';
 import type { ActivityResult, Actor } from '../core/activities.js';
 import { characterLabel } from '../core/profiles.js';
@@ -16,17 +17,38 @@ import {
   type Kind,
   type TimeSpec,
 } from '../core/types.js';
+import { notice } from '../discord/notice.js';
 import type { Services } from '../discord/registry.js';
-import { log } from '../log.js';
 
 const WHEN = 'today 20:30, tomorrow 19:00, 2026-11-20 19:00, asap or flexible';
 const LINK = /\/channels\/\d+\/\d+\/(\d+)\/?$/;
 
-export const ROLE_CHOICES = [
-  { name: 'Tank', value: 'tank' },
-  { name: 'Healer', value: 'healer' },
-  { name: 'DPS', value: 'dps' },
+export const ROLE_OPTIONS: APISelectMenuOption[] = [
+  { label: 'Tank', value: 'tank', emoji: { name: '🛡' } },
+  { label: 'Healer', value: 'healer', emoji: { name: '💚' } },
+  { label: 'DPS', value: 'dps', emoji: { name: '🗡' } },
 ];
+
+/** A dropdown for a form. */
+export const select = (
+  id: string,
+  options: APISelectMenuOption[],
+  required = true,
+): StringSelectMenuBuilder =>
+  new StringSelectMenuBuilder().setCustomId(id).setRequired(required).addOptions(options);
+
+/** The enabled templates of that kind as dropdown options; a dropdown holds at most 25. */
+export async function templateOptions(
+  s: Services,
+  guildId: string,
+  kind: 'dungeon' | 'raid',
+): Promise<APISelectMenuOption[]> {
+  const listed = await s.templates.list(guildId, kind);
+  if (listed.length === 0) {
+    throw new UserError(`There are no ${kind}s yet. An officer can add one with /template add.`);
+  }
+  return listed.slice(0, 25).map((t) => ({ label: t.name.slice(0, 100), value: t.id }));
+}
 
 export const whenOption = (required: boolean) => (o: SlashCommandStringOption) =>
   o
@@ -91,7 +113,7 @@ export async function publishNew(s: Services, result: ActivityResult): Promise<s
   return postLink(activity);
 }
 
-/** The template picked from the autocomplete list; typed text or another kind is rejected. */
+/** The template picked from the dropdown; anything else or another kind is rejected. */
 export async function resolveTemplateOption(
   s: Services,
   guildId: string,
@@ -100,7 +122,7 @@ export async function resolveTemplateOption(
 ): ReturnType<TemplateService['resolve']> {
   const listed = await s.templates.list(guildId, kind);
   if (!listed.some((t) => t.id === id)) {
-    throw new UserError(`Pick a ${kind} from the list that appears while you type.`);
+    throw new UserError(`Pick a ${kind} from the list.`);
   }
   return s.templates.resolve(id);
 }
@@ -117,12 +139,12 @@ export async function manageTarget(
   const target = await s.activities.findTarget(guildId, kind, actor.userId, messageId);
   if (i.options.getSubcommand() === 'cancel') {
     await s.publish(await s.activities.cancel(target.id, actor));
-    await i.editReply(`The ${kind === 'dungeon' ? 'group' : kind} is cancelled.`);
+    await i.editReply(notice(`The ${kind === 'dungeon' ? 'group' : kind} is cancelled.`, 'ok'));
   } else {
     const { timezone } = await s.config.get(guildId);
     const time = resolveTimeOption(i.options.getString('when', true), s.clock.now(), timezone);
     await s.publish(await s.activities.setTime(target.id, actor, time));
-    await i.editReply('The new time is set.');
+    await i.editReply(notice('The new time is set.', 'ok'));
   }
 }
 
@@ -138,23 +160,4 @@ export async function starterLabel(i: BaseInteraction, s: Services): Promise<str
   const { characters } = await s.profiles.list(i.user.id);
   if (characters[0]) return characterLabel(characters[0]);
   return i.inCachedGuild() ? i.member.displayName : i.user.displayName;
-}
-
-/** Enabled templates of that kind matching the typed text; an empty list on any error. */
-export async function respondTemplates(
-  i: AutocompleteInteraction,
-  s: Services,
-  kind: 'dungeon' | 'raid',
-): Promise<void> {
-  let choices: { name: string; value: string }[] = [];
-  try {
-    const typed = i.options.getFocused().toLowerCase();
-    choices = (await s.templates.list(i.guildId!, kind))
-      .filter((t) => t.name.toLowerCase().includes(typed))
-      .slice(0, 25)
-      .map((t) => ({ name: t.name.slice(0, 100), value: t.id }));
-  } catch (err) {
-    log.error('autocomplete failed', { err });
-  }
-  await i.respond(choices);
 }

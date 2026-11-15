@@ -2,21 +2,21 @@
 
 A Discord bot for a World of Warcraft: Forever guild. Members find dungeon groups, officers post raids, and anyone can plan a guild event, all with sign-up buttons on one post.
 
-- **Dungeon finder:** pick a dungeon, your role and a time (a date, "asap" or "flexible"). Others join as Tank, Healer or DPS. When the group is full, everyone is mentioned in a thread, gets a direct message, and is reminded before the start.
+- **Dungeon finder:** press "Start a dungeon group" and pick a dungeon, your role and a time from dropdowns (a day and time, "as soon as possible" or "flexible"). Others join as Tank, Healer or DPS. When the group is full, everyone is mentioned in a thread, gets a direct message, and is reminded before the start.
 - **Raid finder:** officers post a raid; members sign up by role, as tentative, or as absent. Extra sign-ups go on a waitlist and move up when a spot opens.
 - **Event planner:** a free-form event with a description and limited or unlimited spots.
 - **Character profiles:** members link their Battle.net account and sign up with their Forever character.
 
 ## Commands
 
-| Command                                                         | Who      | What it does                                         |
-| --------------------------------------------------------------- | -------- | ---------------------------------------------------- |
-| `/dungeon start`, `cancel`, `time`                              | everyone | Start a dungeon group, cancel it, or change its time |
-| `/raid post`, `cancel`, `time`                                  | officers | Post a raid, cancel it, or change its time           |
-| `/event post`, `cancel`, `time`                                 | everyone | Post an event, cancel it, or change its time         |
-| `/profile link`, `refresh`, `add`, `show`, `main`, `remove`     | everyone | Link Battle.net and manage characters                |
-| `/config channels`, `officers`, `reminders`, `timezone`, `show` | officers | Server settings                                      |
-| `/template add`, `edit`, `disable`, `enable`, `list`            | officers | Manage the dungeon and raid lists                    |
+| Command                                                                  | Who      | What it does                                         |
+| ------------------------------------------------------------------------ | -------- | ---------------------------------------------------- |
+| `/dungeon start`, `cancel`, `time`                                       | everyone | Start a dungeon group, cancel it, or change its time |
+| `/raid post`, `cancel`, `time`                                           | officers | Post a raid, cancel it, or change its time           |
+| `/event post`, `cancel`, `time`                                          | everyone | Post an event, cancel it, or change its time         |
+| `/profile link`, `refresh`, `add`, `show`, `main`, `remove`              | everyone | Link Battle.net and manage characters                |
+| `/config channels`, `officers`, `reminders`, `timezone`, `panel`, `show` | officers | Server settings                                      |
+| `/template add`, `edit`, `disable`, `enable`, `list`                     | officers | Manage the dungeon and raid lists                    |
 
 The bot starts with 20 dungeons and 7 raids.
 
@@ -75,7 +75,6 @@ docker run -d --name guild-bot --restart unless-stopped \
   -p 127.0.0.1:3050:3050 \
   -v "$(pwd)/data:/app/data" \
   guild-bot
-docker exec guild-bot npm run register
 ```
 
 Battle.net linking needs the bot to be reachable over HTTPS at `PUBLIC_URL`. Put a reverse proxy such as Caddy in front of port 3050; see [section 6 of the operations guide](docs/operations.md#6-https-with-a-reverse-proxy).
@@ -85,7 +84,6 @@ Battle.net linking needs the bot to be reachable over HTTPS at `PUBLIC_URL`. Put
 ```sh
 npm ci
 npm run build
-npm run register
 node --env-file=.env dist/main.js
 ```
 
@@ -102,7 +100,12 @@ As a server administrator:
 /config channels kind:raid channel:#raids
 /config channels kind:event channel:#events
 /config officers role:@Officer action:add
+/config panel kind:dungeon
+/config panel kind:raid
+/config panel kind:event
 ```
+
+`/config panel` posts a box with buttons ("Start a dungeon group", "My characters", "Link Battle.net") in that kind's channel, so members do not need to know the slash commands. The bot registers its slash commands itself each time it starts.
 
 Check the result with `/config show`. The default timezone for typed times is `Europe/Berlin`; change it with `/config timezone`.
 

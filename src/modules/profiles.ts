@@ -1,14 +1,95 @@
 import {
   ButtonStyle,
-  ComponentType,
   InteractionContextType,
+  LabelBuilder,
   MessageFlags,
+  ModalBuilder,
   SlashCommandBuilder,
+  StringSelectMenuBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  escapeMarkdown,
   type SlashCommandStringOption,
 } from 'discord.js';
 import { CLASSES, characterLabel } from '../core/profiles.js';
-import type { BotModule } from '../discord/registry.js';
+import { UserError } from '../core/types.js';
+import { button, linkButton, notice, row } from '../discord/notice.js';
+import type { BotModule, Services } from '../discord/registry.js';
+import { relabel, rememberPost } from '../discord/relabel.js';
 import { log } from '../log.js';
+
+const SHOWN = 40; // characters listed in one box
+
+/** The private box with the single-use Battle.net login link. */
+async function linkReply(s: Services, userId: string) {
+  const { token } = await s.profiles.startLink(userId);
+  return {
+    ...notice(
+      'Log in with Battle.net to load your WoW Forever characters.\n' +
+        'The link is valid for 10 minutes and works once. Do not share it.',
+      'info',
+      '🔗 Link Battle.net',
+    ),
+    components: [row(linkButton(`${s.env.PUBLIC_URL}/link/${token}`, 'Log in with Battle.net'))],
+  };
+}
+
+/** The member's characters with buttons to link Battle.net or add one by name. */
+async function showReply(s: Services, userId: string) {
+  const { member, characters } = await s.profiles.list(userId);
+  const lines = characters.slice(0, SHOWN).map((c) => {
+    const label = escapeMarkdown(characterLabel(c));
+    return c.id === member?.mainCharacterId ? `⭐ **${label}** (main)` : `• ${label}`;
+  });
+  if (characters.length > SHOWN) lines.push(`… and ${characters.length - SHOWN} more`);
+  if (lines.length === 0) lines.push('No characters yet. Link Battle.net or add one by name.');
+  const linked = member?.battleNetId !== undefined;
+  lines.push('', `Battle.net account: ${linked ? 'linked' : 'not linked'}.`);
+  return {
+    ...notice(lines.join('\n'), 'info', '🧙 Your characters'),
+    components: [
+      row(
+        button(
+          'profile:link',
+          linked ? 'Refresh from Battle.net' : 'Link Battle.net',
+          ButtonStyle.Primary,
+          '🔗',
+        ),
+        button('profile:add', 'Add by name', ButtonStyle.Secondary, '✏️'),
+      ),
+    ],
+  };
+}
+
+const text = (id: string, maxLength: number, required = true) =>
+  new TextInputBuilder()
+    .setCustomId(id)
+    .setStyle(TextInputStyle.Short)
+    .setMaxLength(maxLength)
+    .setRequired(required);
+
+/** The "Add by name" form; the id carries the activity whose post should show the character. */
+const addForm = (activityId?: string) =>
+  new ModalBuilder()
+    .setCustomId(activityId ? `profile:add:${activityId}` : 'profile:add')
+    .setTitle('Add a character')
+    .addLabelComponents(
+      new LabelBuilder().setLabel('Name').setTextInputComponent(text('name', 32)),
+      new LabelBuilder()
+        .setLabel('Surname')
+        .setDescription('Optional')
+        .setTextInputComponent(text('surname', 32, false)),
+      new LabelBuilder().setLabel('Class').setStringSelectMenuComponent(
+        new StringSelectMenuBuilder()
+          .setCustomId('class')
+          .setRequired(true)
+          .addOptions(CLASSES.map((name) => ({ label: name, value: name }))),
+      ),
+      new LabelBuilder()
+        .setLabel('Level')
+        .setDescription('1 to 60')
+        .setTextInputComponent(text('level', 2)),
+    );
 
 const characterOption = (required: boolean) => (o: SlashCommandStringOption) =>
   o
@@ -97,11 +178,7 @@ export const profiles: BotModule = {
     const sub = i.options.getSubcommand();
 
     if (sub === 'link' || sub === 'refresh') {
-      const { token } = await s.profiles.startLink(userId);
-      await i.editReply(
-        `Log in with Battle.net here: ${s.env.PUBLIC_URL}/link/${token}\n` +
-          'The link is valid for 10 minutes and works once. Do not share it.',
-      );
+      await i.editReply(await linkReply(s, userId));
     } else if (sub === 'add') {
       const character = await s.profiles.addManual(userId, {
         name: i.options.getString('name', true),
@@ -109,62 +186,70 @@ export const profiles: BotModule = {
         className: i.options.getString('class', true),
         level: i.options.getInteger('level', true),
       });
-      await i.editReply(`Added ${characterLabel(character)}.`);
+      await i.editReply(notice(`Added ${escapeMarkdown(characterLabel(character))}.`, 'ok'));
     } else if (sub === 'show') {
-      const { member, characters } = await s.profiles.list(userId);
-      const lines = characters.map((c) =>
-        c.id === member?.mainCharacterId
-          ? `⭐ ${characterLabel(c)} (main)`
-          : `• ${characterLabel(c)}`,
-      );
-      if (lines.length === 0) lines.push('No characters yet. Use /profile link or /profile add.');
-      lines.push(
-        member?.battleNetId !== undefined
-          ? 'Battle.net account: linked.'
-          : 'Battle.net account: not linked.',
-      );
-      await i.editReply(lines.join('\n'));
+      await i.editReply(await showReply(s, userId));
     } else if (sub === 'main') {
       // ProfileService refuses a character that is not on this member's profile.
       await s.profiles.setMain(userId, i.options.getString('character', true));
-      await i.editReply('Your main character is set.');
+      await i.editReply(notice('Your main character is set.', 'ok'));
     } else {
       const characterId = i.options.getString('character');
       if (characterId !== null) {
         await s.profiles.removeCharacter(userId, characterId);
-        await i.editReply('The character is removed.');
+        await i.editReply(notice('The character is removed.', 'ok'));
         return;
       }
       await i.editReply({
-        content:
+        ...notice(
           'Remove all your characters and your Battle.net link from the bot? This cannot be undone.',
-        components: [
-          {
-            type: ComponentType.ActionRow,
-            components: [
-              {
-                type: ComponentType.Button,
-                customId: 'profile:removeall',
-                label: 'Remove everything',
-                style: ButtonStyle.Danger,
-              },
-            ],
-          },
-        ],
+          'error',
+        ),
+        components: [row(button('profile:removeall', 'Remove everything', ButtonStyle.Danger))],
       });
     }
   },
 
-  /** `profile:removeall`, the confirmation button of `/profile remove` without a character. */
-  async onComponent(i, s, [action]) {
-    await i.deferUpdate();
-    if (action !== 'removeall') return;
-    // The confirmation is ephemeral, so only the member it was shown to can click it; the data
-    // removed is always the clicking member's own.
-    await s.profiles.removeAll(i.user.id);
-    await i.editReply({
-      content: 'All your characters and your Battle.net link are removed.',
-      components: [],
+  /**
+   * `profile:removeall` (the confirmation of `/profile remove`), and from panels and
+   * confirmations `profile:show`, `profile:link[:activityId]` and `profile:add[:activityId]`.
+   */
+  async onComponent(i, s, [action, activityId]) {
+    const userId = i.user.id;
+    if (action === 'add') {
+      await i.showModal(addForm(activityId));
+    } else if (action === 'removeall') {
+      await i.deferUpdate();
+      // The confirmation is ephemeral, so only the member it was shown to can click it; the data
+      // removed is always the clicking member's own.
+      await s.profiles.removeAll(userId);
+      await i.editReply({
+        ...notice('All your characters and your Battle.net link are removed.', 'ok'),
+        components: [],
+      });
+    } else {
+      await i.deferReply({ flags: MessageFlags.Ephemeral });
+      if (action === 'show') {
+        await i.editReply(await showReply(s, userId));
+        return;
+      }
+      if (activityId) rememberPost(userId, activityId);
+      await i.editReply(await linkReply(s, userId));
+    }
+  },
+
+  /** `profile:add[:activityId]`, the "Add by name" form. */
+  async onModal(i, s, [, activityId]) {
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    const level = i.fields.getTextInputValue('level').trim();
+    if (!/^\d+$/.test(level)) throw new UserError('Level must be a number from 1 to 60.');
+    const character = await s.profiles.addManual(i.user.id, {
+      name: i.fields.getTextInputValue('name'),
+      surname: i.fields.getTextInputValue('surname').trim() || undefined,
+      className: i.fields.getStringSelectValues('class')[0] ?? '',
+      level: Number(level),
     });
+    if (activityId) await relabel(s, i.user.id, activityId);
+    await i.editReply(notice(`Added ${escapeMarkdown(characterLabel(character))}.`, 'ok'));
   },
 };

@@ -36,14 +36,40 @@ const buttonIds = (r: ReturnType<typeof renderActivity>) =>
 const buttonLabels = (r: ReturnType<typeof renderActivity>) =>
   r.components.flatMap((row) => row.components.map((c) => c.label));
 
+const card = (r: ReturnType<typeof renderActivity>) => r.embeds[0]!;
+const body = (r: ReturnType<typeof renderActivity>) => card(r).description ?? '';
+
 describe('renderActivity', () => {
-  it('renders an open dungeon with role lines and four buttons', () => {
+  it('renders an open dungeon as a card with role sections and four buttons', () => {
     const r = renderActivity(view({}, [{ role: 'tank', label: 'Brook Flok, Priest 37' }]));
-    expect(r.content).toContain('🛡 Tank    1/1');
-    expect(r.content).toContain('Brook Flok, Priest 37');
-    expect(r.content).toContain('0/1');
-    expect(r.content).toContain('started by <@u1>');
+    expect(r.content).toBe('');
+    expect(card(r).title).toBe('⚔️ Scarlet Monastery');
+    expect(body(r)).toContain('🛡 **TANK** 1/1\n　Brook Flok, Priest 37');
+    expect(body(r)).toContain('💚 **HEALER** 0/1\n　*open*');
+    expect(body(r)).toContain('Started by <@u1>');
     expect(buttonIds(r)).toEqual(['act:a1:tank', 'act:a1:healer', 'act:a1:dps', 'act:a1:leave']);
+  });
+
+  it('shows progress and the roles still needed', () => {
+    const r = renderActivity(
+      view({}, [{ role: 'tank' }, { role: 'dps' }, { role: 'dps', status: 'waitlist' }]),
+    );
+    expect(body(r)).toContain('**2/5** · needs Healer, DPS');
+    expect(body(r)).toContain('▰▰▰▰▰▱▱▱▱▱▱▱');
+  });
+
+  it('says full when every slot is taken', () => {
+    const r = renderActivity(
+      view({ slots: { tank: 1, dps: 1 }, state: 'full' }, [{ role: 'tank' }, { role: 'dps' }]),
+    );
+    expect(body(r)).toContain('▰▰▰▰▰▰▰▰▰▰▰▰ **2/2** · full');
+    expect(body(r)).toContain('🛡 **TANK** 1/1');
+  });
+
+  it('shows the waitlist only when someone is on it', () => {
+    expect(body(renderActivity(view({})))).not.toContain('WAITLIST');
+    const r = renderActivity(view({}, [{ role: 'dps', status: 'waitlist', label: 'Late Mage' }]));
+    expect(body(r)).toContain('⏳ **WAITLIST** 1\n　Late Mage');
   });
 
   it('adds Tentative and Can’t come for raids', () => {
@@ -53,6 +79,7 @@ describe('renderActivity', () => {
           kind: 'raid',
           time: { type: 'at', at: new Date('2026-11-20T18:00:00Z') },
           slots: { tank: 2, healer: 5, dps: 13 },
+          reminderOffsetsMin: [1440, 60],
         },
         [{ status: 'tentative', label: 'Maybe Mage' }],
       ),
@@ -65,30 +92,38 @@ describe('renderActivity', () => {
       'act:a1:absent',
       'act:a1:leave',
     ]);
-    expect(r.content).toContain('Tentative');
-    expect(r.content).toContain('Maybe Mage');
+    expect(body(r)).toContain('❔ **TENTATIVE** 1\n　Maybe Mage');
+    expect(card(r).footer?.text).toBe('Raid · reminder 1 d and 1 h before');
     expect(r.components.every((row) => row.components.length <= 5)).toBe(true);
   });
 
-  it('shows Join and ∞ for an unlimited event', () => {
+  it('shows Join and a head count for an unlimited event', () => {
     const r = renderActivity(
-      view({ kind: 'event', title: 'Fishing contest', slots: { participant: null } }),
+      view({ kind: 'event', title: 'Fishing contest', slots: { participant: null } }, [
+        { role: 'participant' },
+      ]),
     );
     expect(buttonLabels(r)).toEqual(['Join', 'Leave']);
     expect(buttonIds(r)).toEqual(['act:a1:participant', 'act:a1:leave']);
-    expect(r.content).toContain('∞');
+    expect(body(r)).toContain('👥 **1** coming');
+    expect(body(r)).toContain('1/∞');
   });
 
-  it('shows a status line and no buttons once cancelled', () => {
+  it('shows the status in the title, turns grey and drops the buttons once cancelled', () => {
     const r = renderActivity(view({ state: 'cancelled' }));
     expect(r.components).toEqual([]);
-    expect(r.content).toContain('Cancelled');
+    expect(card(r).title).toBe('⚔️ Scarlet Monastery — 🚫 Cancelled');
+    expect(card(r).color).toBe(0x6b7280);
   });
 
-  it('escapes labels so they cannot mention or format', () => {
-    const r = renderActivity(view({}, [{ role: 'dps', label: '@everyone **x**' }]));
-    expect(r.content).not.toContain('@everyone');
-    expect(r.content).not.toContain('**x**');
+  it('escapes labels and the title so they cannot mention or format', () => {
+    const r = renderActivity(
+      view({ title: '**Bold** @here' }, [{ role: 'dps', label: '@everyone **x**' }]),
+    );
+    expect(body(r)).not.toContain('@everyone');
+    expect(body(r)).not.toContain('**x**');
+    expect(card(r).title).not.toContain('**Bold**');
+    expect(card(r).title).not.toContain('@here');
   });
 
   it('escapes masked links and headings', () => {
@@ -97,11 +132,11 @@ describe('renderActivity', () => {
         { role: 'participant', label: '[Free gold](https://x.yz)' },
       ]),
     );
-    expect(r.content).toContain('\\[Free gold](https://x.yz)');
-    expect(r.content).toContain('\\# Big');
+    expect(body(r)).toContain('\\[Free gold](https://x.yz)');
+    expect(body(r)).toContain('\\# Big');
   });
 
-  it('renders 2000 signups within 100 ms and 2000 characters', () => {
+  it('renders 2000 signups within 100 ms and 4096 characters', () => {
     const signups = Array.from({ length: 2000 }, (_, n) => ({
       role: 'participant' as const,
       label: `Member ${n + 1}, Warrior 60`,
@@ -110,18 +145,18 @@ describe('renderActivity', () => {
     const start = performance.now();
     const r = renderActivity(v);
     expect(performance.now() - start).toBeLessThan(100);
-    expect(r.content.length).toBeLessThanOrEqual(2000);
-    expect(r.content).toContain('more');
+    expect(body(r).length).toBeLessThanOrEqual(4096);
+    expect(body(r)).toContain('more');
   });
 
-  it('stays within 2000 characters for 400 signups', () => {
-    const signups = Array.from({ length: 400 }, (_, n) => ({
-      role: 'participant' as const,
-      label: `Member ${n + 1}, Warrior 60`,
+  it('keeps a 40-member raid complete', () => {
+    const signups = Array.from({ length: 40 }, (_, n) => ({
+      role: 'dps' as const,
+      label: `Member ${n + 1} Surname, Warrior 60`,
     }));
-    const r = renderActivity(view({ kind: 'event', slots: { participant: null } }, signups));
-    expect(r.content.length).toBeLessThanOrEqual(2000);
-    expect(r.content).toContain('more');
+    const r = renderActivity(view({ kind: 'raid', slots: { dps: 40 } }, signups));
+    expect(body(r)).toContain('Member 40 Surname');
+    expect(body(r)).not.toContain('more');
   });
 });
 

@@ -9,6 +9,7 @@ import {
   type BotModule,
   type Services,
 } from '../../src/discord/registry.js';
+import { notice } from '../../src/discord/notice.js';
 import { MemoryStorage } from '../../src/storage/memory.js';
 
 const services = {} as Services;
@@ -73,7 +74,7 @@ describe('createRouter', () => {
       commandName: 'dungeon',
     });
     await route(i);
-    expect(replies).toEqual([{ content: 'x', flags: MessageFlags.Ephemeral }]);
+    expect(replies).toEqual([{ ...notice('x', 'error'), flags: MessageFlags.Ephemeral }]);
   });
 
   it('logs other errors and answers "Something went wrong."', async () => {
@@ -92,7 +93,9 @@ describe('createRouter', () => {
       deferred: true,
     });
     await route(i);
-    expect(replies).toEqual([{ content: 'Something went wrong.', flags: MessageFlags.Ephemeral }]);
+    expect(replies).toEqual([
+      { ...notice('Something went wrong.', 'error'), flags: MessageFlags.Ephemeral },
+    ]);
     expect(log).toHaveBeenCalled();
     log.mockRestore();
   });

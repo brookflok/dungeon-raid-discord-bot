@@ -1,19 +1,54 @@
-import { InteractionContextType, MessageFlags, SlashCommandBuilder } from 'discord.js';
-import { UserError, type Role } from '../core/types.js';
-import { actorOf, type BotModule } from '../discord/registry.js';
 import {
-  ROLE_CHOICES,
+  InteractionContextType,
+  LabelBuilder,
+  MessageFlags,
+  ModalBuilder,
+  SlashCommandBuilder,
+  type BaseInteraction,
+} from 'discord.js';
+import type { Actor } from '../core/activities.js';
+import { UserError, type Role } from '../core/types.js';
+import { posted } from '../discord/posted.js';
+import { actorOf, type BotModule, type Services } from '../discord/registry.js';
+import { dayField, hourMinuteFields, readFormTime } from '../discord/time-form.js';
+import {
+  ROLE_OPTIONS,
   cancelSubcommand,
   manageTarget,
   publishNew,
   requireChannel,
   resolveTemplateOption,
-  resolveTimeOption,
-  respondTemplates,
+  select,
   starterLabel,
+  templateOptions,
   timeSubcommand,
-  whenOption,
 } from './shared-options.js';
+
+async function officer(i: BaseInteraction, s: Services): Promise<Actor> {
+  const actor = await actorOf(i, s);
+  if (!actor.isOfficer) throw new UserError('Only officers can post raids.');
+  return actor;
+}
+
+/** The form: raid, day, hour, minutes, and optionally the officer's own role. */
+async function form(s: Services, guildId: string): Promise<ModalBuilder> {
+  const config = await s.config.get(guildId);
+  requireChannel(config, 'raid');
+  return new ModalBuilder()
+    .setCustomId('raid:post')
+    .setTitle('Post a raid')
+    .addLabelComponents(
+      new LabelBuilder()
+        .setLabel('Raid')
+        .setStringSelectMenuComponent(select('raid', await templateOptions(s, guildId, 'raid'))),
+      dayField(s.clock.now(), config.timezone, false),
+      ...hourMinuteFields(config.timezone, false),
+      new LabelBuilder()
+        .setLabel('Sign yourself up as')
+        .setDescription('Optional')
+        .setStringSelectMenuComponent(select('signup', ROLE_OPTIONS, false)),
+    );
+}
 
 export const raids: BotModule = {
   name: 'raid',
@@ -22,44 +57,38 @@ export const raids: BotModule = {
       .setName('raid')
       .setDescription('Post and manage raids (officers)')
       .setContexts(InteractionContextType.Guild)
-      .addSubcommand((c) =>
-        c
-          .setName('post')
-          .setDescription('Post a raid')
-          .addStringOption((o) =>
-            o.setName('raid').setDescription('Which raid').setRequired(true).setAutocomplete(true),
-          )
-          .addStringOption(whenOption(true))
-          .addStringOption((o) =>
-            o
-              .setName('signup')
-              .setDescription('Sign yourself up with this role')
-              .addChoices(ROLE_CHOICES),
-          ),
-      )
+      .addSubcommand((c) => c.setName('post').setDescription('Post a raid (opens a form)'))
       .addSubcommand(cancelSubcommand('raid'))
       .addSubcommand(timeSubcommand('raid'))
       .toJSON(),
   ],
 
-  onAutocomplete: (i, s) => respondTemplates(i, s, 'raid'),
-
   async onCommand(i, s) {
-    await i.deferReply({ flags: MessageFlags.Ephemeral });
-    const actor = await actorOf(i, s);
-    if (!actor.isOfficer) throw new UserError('Only officers can post raids.');
-    if (i.options.getSubcommand() !== 'post') {
-      await manageTarget(i, s, 'raid', actor);
+    if (i.options.getSubcommand() === 'post') {
+      await officer(i, s);
+      await i.showModal(await form(s, i.guildId!)); // the acknowledgement; the rest is in onModal
       return;
     }
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    await manageTarget(i, s, 'raid', await officer(i, s));
+  },
 
-    const guildId = i.guildId!; // guild-only command
+  /** `raid:post`, the panel button. */
+  async onComponent(i, s) {
+    await officer(i, s);
+    await i.showModal(await form(s, i.guildId!));
+  },
+
+  async onModal(i, s) {
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    const actor = await officer(i, s);
+    const guildId = i.guildId!; // guild-only form
     const config = await s.config.get(guildId);
     requireChannel(config, 'raid');
-    const when = i.options.getString('when', true);
-    const time = resolveTimeOption(when, s.clock.now(), config.timezone);
-    const role = i.options.getString('signup') as Role | null;
-    const raid = await resolveTemplateOption(s, guildId, 'raid', i.options.getString('raid', true));
+    const time = readFormTime(i, config.timezone, 'hourMinute');
+    const role = i.fields.getStringSelectValues('signup')[0] as Role | undefined;
+    const id = i.fields.getStringSelectValues('raid')[0] ?? '';
+    const raid = await resolveTemplateOption(s, guildId, 'raid', id);
     // Checked before creating, so a failed signup never leaves a raid without a post.
     if (role && raid.slots[role] === undefined) {
       throw new UserError('That role is not part of this raid.');
@@ -77,6 +106,6 @@ export const raids: BotModule = {
     if (role) {
       result = await s.activities.signUp(result.activity.id, actor.userId, { role, label });
     }
-    await i.editReply(`Your raid is posted: ${await publishNew(s, result)}`);
+    await i.editReply(await posted(s, i.user.id, result, await publishNew(s, result)));
   },
 };

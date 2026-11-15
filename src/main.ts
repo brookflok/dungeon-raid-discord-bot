@@ -10,6 +10,7 @@ import { TemplateService } from './core/templates.js';
 import { createPublisher } from './discord/effects.js';
 import { notifyLinked } from './discord/notify-linked.js';
 import { createRouter } from './discord/registry.js';
+import { relabelPending } from './discord/relabel.js';
 import { loadEnv } from './env.js';
 import { log } from './log.js';
 import { modules } from './modules/index.js';
@@ -44,15 +45,8 @@ log.info('Templates seeded', { added });
 // Direct messages to members go through the REST API and need no intent.
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const publish = createPublisher(client, activities, config);
-const route = createRouter(modules, {
-  activities,
-  templates,
-  config,
-  profiles,
-  publish,
-  env,
-  clock,
-});
+const services = { activities, templates, config, profiles, publish, env, clock };
+const route = createRouter(modules, services);
 client.on(Events.InteractionCreate, (i) => void route(i));
 client.on(Events.Error, (err) => log.error('Discord client error', { err }));
 
@@ -60,6 +54,12 @@ const scheduler = new Scheduler({ storage, clock, activities, onResult: publish 
 client.once(Events.ClientReady, (ready) => {
   log.info('Discord client ready', { user: ready.user.tag });
   scheduler.start();
+  // Guild commands (not global ones), so a change shows up in the server immediately.
+  const commands = modules.flatMap((m) => m.commands);
+  ready.application.commands.set(commands, env.GUILD_ID).then(
+    () => log.info('Slash commands registered', { commands: commands.map((c) => c.name) }),
+    (err: unknown) => log.error('Slash command registration failed', { err }),
+  );
 });
 
 const web = createWebServer({
@@ -70,7 +70,10 @@ const web = createWebServer({
     region: env.BLIZZARD_REGION,
     redirectUri: `${env.PUBLIC_URL}/callback`,
   }),
-  onLinked: notifyLinked(client),
+  onLinked: async (userId, characters) => {
+    await notifyLinked(client)(userId, characters);
+    await relabelPending(services, userId);
+  },
 });
 web.listen(env.PORT, () => log.info('Web server listening', { port: env.PORT }));
 

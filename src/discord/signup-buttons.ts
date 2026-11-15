@@ -1,7 +1,13 @@
-import { ComponentType, MessageFlags, type MessageComponentInteraction } from 'discord.js';
+import {
+  ComponentType,
+  MessageFlags,
+  escapeMarkdown,
+  type MessageComponentInteraction,
+} from 'discord.js';
 import type { ActivityResult } from '../core/activities.js';
 import { characterLabel } from '../core/profiles.js';
 import { UserError, type Character, type Role } from '../core/types.js';
+import { notice } from './notice.js';
 import type { BotModule } from './registry.js';
 
 /** The first character (the main, as ProfileService.list sorts) or the member's display name. */
@@ -28,7 +34,10 @@ export const signupButtons: BotModule = {
       if (!character) throw new UserError('That character is not on your profile.');
       const label = characterLabel(character);
       result = await s.activities.signUp(activityId, userId, { role: pickedRole as Role, label });
-      await i.editReply({ content: `Signed up as ${label}.`, components: [] });
+      await i.editReply({
+        ...notice(`Signed up as ${escapeMarkdown(label)}.`, 'ok'),
+        components: [],
+      });
     } else {
       const { characters } = await s.profiles.list(userId);
       if (action === 'tentative' || action === 'absent') {
@@ -38,7 +47,7 @@ export const signupButtons: BotModule = {
         });
       } else if (characters.length > 1) {
         await i.followUp({
-          content: 'Which character do you want to sign up with?',
+          ...notice('Which character do you want to sign up with?'),
           flags: MessageFlags.Ephemeral,
           components: [
             {

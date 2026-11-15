@@ -6,8 +6,8 @@ import type { Services } from '../../src/discord/registry.js';
 import { resolveTemplateOption } from '../../src/modules/shared-options.js';
 import { MemoryStorage } from '../../src/storage/memory.js';
 
-const PICK_DUNGEON = 'Pick a dungeon from the list that appears while you type.';
-const PICK_RAID = 'Pick a raid from the list that appears while you type.';
+const PICK_DUNGEON = 'Pick a dungeon from the list.';
+const PICK_RAID = 'Pick a raid from the list.';
 
 let s: Services;
 let templates: TemplateService;

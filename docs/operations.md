@@ -117,7 +117,7 @@ docker stop guild-bot
 docker rm guild-bot
 ```
 
-Then start it again with the `docker run` command from step 3, and register the commands again (section 7, step 2). Database changes are applied automatically when the bot starts.
+Then start it again with the `docker run` command from step 3. The bot registers its slash commands itself at every start. Database changes are applied automatically when the bot starts.
 
 ## 6. HTTPS with a reverse proxy
 
@@ -147,13 +147,7 @@ Any other reverse proxy (nginx, Traefik, or the one your hosting provider offers
 ## 7. First run
 
 1. Start the container (section 5) and wait for `Discord client ready` in the log.
-2. Register the slash commands with Discord:
-
-   ```sh
-   docker exec guild-bot npm run register
-   ```
-
-   The output ends with a `Slash commands registered` line listing `dungeon`, `raid`, `event`, `profile`, `config` and `template`. The line `.env not found. Continuing without it.` is expected inside the container, because Docker already provides the values. The commands are registered for the guild's server only, so they appear immediately; if they do not show up, restart the Discord app. Run this command again after every update.
+2. The bot registers its slash commands itself: the log shows a `Slash commands registered` line listing `dungeon`, `raid`, `event`, `profile`, `config` and `template`. The commands are registered for the guild's server only, so they appear immediately; if they do not show up, restart the Discord app.
 3. In Discord, as a server administrator (administrators always count as officers), choose the channel for each kind of post:
 
    ```
@@ -169,7 +163,15 @@ Any other reverse proxy (nginx, Traefik, or the one your hosting provider offers
    ```
 
 5. Optional: change the timezone used for typed times (default `Europe/Berlin`) with `/config timezone zone:Europe/Berlin`, or the default reminders of a kind with `/config reminders kind:raid offsets:24h, 1h`.
-6. Check everything with `/config show`. The dungeon and raid lists were filled automatically at the first start; `/template list kind:dungeon` and `/template list kind:raid` show them.
+6. Post the panel with buttons in each channel, so members can start without slash commands. The bot tries to pin it; give it the **Manage Messages** permission (or **Pin Messages**) if you want that:
+
+   ```
+   /config panel kind:dungeon
+   /config panel kind:raid
+   /config panel kind:event
+   ```
+
+7. Check everything with `/config show`. The dungeon and raid lists were filled automatically at the first start; `/template list kind:dungeon` and `/template list kind:raid` show them.
 
 ## 8. Daily backup
 
@@ -217,8 +219,9 @@ A count of 0 means the role is not part of the group: `Test pair` posts show onl
 
 Dungeon finder:
 
-- [ ] `/template add` shows up in `/dungeon start` autocomplete: typing "Test" in the `dungeon` option of `/dungeon start` offers `Test pair`.
-- [ ] Start a dungeon with each time option, using `/dungeon start dungeon:Test pair role:Tank` and then: no `when` (the post says "As soon as possible"), `when:asap`, `when:flexible` (the post says "Flexible — time to be agreed"), `when:today 20:30` (a time later today), `when:tomorrow 19:00`, and `when:` with a future date such as `2026-12-20 19:00`. Each post appears in the dungeon channel with the right time. A time in the past is refused with "That time is in the past…". Cancel each group afterwards with `/dungeon cancel`.
+- [ ] `/template add` shows up in the form: `/dungeon start` (or the panel button **Start a dungeon group**) opens a form whose Dungeon dropdown offers `Test pair`.
+- [ ] Start a dungeon with each time option. In the form pick `Test pair`, the role Tank, and as Day in turn: "As soon as possible" (the post says "As soon as possible"), "Flexible" (the post says "Flexible — time to be agreed"), "Today" with a later hour, "Tomorrow", and a later day. Each post appears in the dungeon channel as a card with the right time. "Today" with an hour that has passed is refused with "That time is in the past…". Cancel each group afterwards with the **Cancel group** button on the private confirmation.
+- [ ] Character offer: an account without characters starts a group. The private confirmation offers **Link Battle.net** and **Add by name**; after adding a character by name, the post shows the character instead of the Discord name.
 - [ ] Fill a group with test accounts: a second account clicks **DPS** on a `Test pair` post. A thread opens on the post with "✅ The group is full…" and a mention of both members, and both receive a direct message "✅ Your group … is full:" with a link to the post.
 - [ ] Waitlist promotion: on the full group, a third account clicks **DPS** and is listed under Waitlist. The DPS member clicks **Leave**. The waitlisted account moves into the group, and the thread says "⬆️ … moved up from the waitlist and is now in the group."
 - [ ] Leave when full, then refill: on a full group with nobody waiting, the DPS member clicks **Leave**; the post shows a free DPS slot again. Another account clicks **DPS**. The thread shows only "✅ The group is full again." and nobody receives a direct message.
@@ -230,12 +233,12 @@ Dungeon finder:
 
 Raid finder:
 
-- [ ] A member without the officer role runs `/raid post raid:<any> when:tomorrow 20:00` and is refused with "Only officers can post raids."
-- [ ] Tentative and Can't come: an officer posts a raid with `/raid post raid:<any> when:tomorrow 20:00`. One account clicks **Tentative** and another **Can't come**; they are listed under "Tentative" and "Can't come". When one of them then clicks a role button, they move to that role.
+- [ ] A member without the officer role runs `/raid post` and is refused with "Only officers can post raids."
+- [ ] Tentative and Can't come: an officer posts a raid with `/raid post` (pick any raid and tomorrow 20:00). One account clicks **Tentative** and another **Can't come**; they are listed under "Tentative" and "Can't come". When one of them then clicks a role button, they move to that role.
 
 Event planner:
 
-- [ ] Unlimited event: `/event post` opens a form; fill in a title and `when`, and leave "Maximum people" empty. The post shows "Coming 0/∞", has no waitlist line, and every account that clicks **Join** is listed.
+- [ ] Unlimited event: `/event post` opens a form; fill in a title, pick a day and time, and leave "Maximum people" empty. The post shows "COMING 0/∞", has no waitlist section, and every account that clicks **Join** is listed.
 - [ ] Capped event: `/event post` with "Maximum people" set to 2. The third account that clicks **Join** is put on the waitlist.
 
 Reminders:

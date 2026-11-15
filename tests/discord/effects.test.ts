@@ -128,18 +128,18 @@ describe('publisher when the thread cannot be started', () => {
 
   it('uses the thread that already exists on the post and stores it', async () => {
     const { sent, mentioned, stored } = await publishFilled(true);
-    expect(sent.map((s) => s.to)).toEqual(['thread', 'thread']);
+    expect(sent.map((s) => s.to)).toEqual(['thread']);
+    expect(sent[0]?.payload.embeds).toEqual([
+      { description: '✅ The group is full — time to go!', color: 0x22c55e },
+    ]);
     expect(mentioned).toEqual(['u1', 'u2']);
     expect(stored.threadId).toBe('m1');
   });
 
   it('with no thread at all, mentions the members in replies to the post', async () => {
     const { sent, mentioned, stored } = await publishFilled(false);
-    expect(sent.map((s) => s.to)).toEqual(['channel', 'channel']);
-    expect(sent.map((s) => s.payload.reply)).toEqual([
-      { messageReference: 'm1' },
-      { messageReference: 'm1' },
-    ]);
+    expect(sent.map((s) => s.to)).toEqual(['channel']);
+    expect(sent.map((s) => s.payload.reply)).toEqual([{ messageReference: 'm1' }]);
     expect(mentioned).toEqual(['u1', 'u2']);
     expect(stored.threadId).toBeUndefined();
   });

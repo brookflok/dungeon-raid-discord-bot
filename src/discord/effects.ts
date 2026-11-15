@@ -1,12 +1,21 @@
-import { messageLink, type Client, type Message, type SendableChannels } from 'discord.js';
+import {
+  escapeMarkdown,
+  messageLink,
+  type APIEmbed,
+  type Client,
+  type Message,
+  type SendableChannels,
+} from 'discord.js';
 import type { ActivityResult, ActivityService, ActivityView, Effect } from '../core/activities.js';
 import type { ConfigService } from '../core/config.js';
 import type { Signup, SignupStatus, TimeSpec } from '../core/types.js';
 import { log } from '../log.js';
+import { COLOR, linkButton, notice, row } from './notice.js';
 import { renderActivity, timeText } from './render.js';
 
 interface ThreadMessage {
   content: string;
+  embeds?: APIEmbed[];
   allowedMentions: { users: string[] };
 }
 
@@ -63,24 +72,21 @@ function effectText(e: Effect, time: TimeSpec): string | undefined {
   }
 }
 
-/** The text (pinging only members named in it), then the other recipients in mention chunks. */
+/** The notice as a box on the first message; the recipients are mentioned as text in chunks. */
 function threadMessages({ activity, signups }: ActivityView, effects: Effect[]): ThreadMessage[] {
   const lines: string[] = [];
-  const named = new Set<string>();
-  const others = new Set<string>();
+  const users = new Set<string>();
   for (const e of effects) {
     const text = effectText(e, activity.time);
     if (!text) continue;
     lines.push(text);
-    const inline = e.type === 'promoted' || e.type === 'starterChanged';
-    for (const id of recipients(e, signups)) (inline ? named : others).add(id);
+    for (const id of recipients(e, signups)) users.add(id);
   }
-  named.forEach((id) => others.delete(id));
-  if (named.size + others.size === 0) return [];
-  return [
-    { content: lines.join('\n'), allowedMentions: { users: [...named] } },
-    ...mentionChunks([...others]),
-  ];
+  const chunks = mentionChunks([...users]);
+  if (!chunks[0]) return [];
+  const bad = effects.some((e) => e.type === 'cancelled');
+  chunks[0].embeds = [{ description: lines.join('\n'), color: bad ? COLOR.closed : COLOR.ok }];
+  return chunks;
 }
 
 export function createPublisher(
@@ -186,12 +192,19 @@ export function createPublisher(
         const url =
           post?.url ?? (channelId && messageId && messageLink(channelId, messageId, guildId));
         if (!url) throw new Error('no post to link to');
-        const content = `✅ Your group "${activity.title}" is full: ${url}`;
+        const message = {
+          ...notice(
+            `Your group **${escapeMarkdown(activity.title)}** is full.`,
+            'ok',
+            '✅ Group full',
+          ),
+          components: [row(linkButton(url, 'Go to post'))],
+        };
         // A member who blocks direct messages still has the thread mention; not an error.
         await Promise.allSettled(
           signups
             .filter((s) => s.status === 'confirmed')
-            .map((s) => client.users.send(s.userId, content)),
+            .map((s) => client.users.send(s.userId, message)),
         );
       }
     } catch (err) {

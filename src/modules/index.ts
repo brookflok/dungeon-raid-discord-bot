@@ -1,3 +1,4 @@
+import { manage } from '../discord/manage.js';
 import type { BotModule } from '../discord/registry.js';
 import { signupButtons } from '../discord/signup-buttons.js';
 import { admin } from './admin.js';
@@ -11,4 +12,12 @@ import { raids } from './raids.js';
  * register-commands.ts registers their slash commands. This is a registration list, not a
  * module, and the only file that imports all modules.
  */
-export const modules: BotModule[] = [signupButtons, dungeons, raids, events, profiles, admin];
+export const modules: BotModule[] = [
+  signupButtons,
+  manage,
+  dungeons,
+  raids,
+  events,
+  profiles,
+  admin,
+];

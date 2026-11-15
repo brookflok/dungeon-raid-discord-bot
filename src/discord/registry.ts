@@ -2,6 +2,7 @@ import {
   MessageFlags,
   PermissionFlagsBits,
   type AutocompleteInteraction,
+  type BaseInteraction,
   type ChatInputCommandInteraction,
   type Interaction,
   type MessageComponentInteraction,
@@ -16,6 +17,7 @@ import type { TemplateService } from '../core/templates.js';
 import { UserError } from '../core/types.js';
 import type { Env } from '../env.js';
 import { log } from '../log.js';
+import { notice } from './notice.js';
 
 export interface Services {
   activities: ActivityService;
@@ -70,7 +72,7 @@ export function createRouter(modules: BotModule[], s: Services): (i: Interaction
       if (!(err instanceof UserError)) log.error('interaction failed', { err });
       if (!i.isRepliable()) return;
       const reply = {
-        content: err instanceof UserError ? err.message : 'Something went wrong.',
+        ...notice(err instanceof UserError ? err.message : 'Something went wrong.', 'error'),
         flags: MessageFlags.Ephemeral,
       } as const;
       try {
@@ -83,7 +85,7 @@ export function createRouter(modules: BotModule[], s: Services): (i: Interaction
 }
 
 /** Who is acting; officers per ConfigService.isOfficer (officer role or server administrator). */
-export async function actorOf(i: Interaction, s: Services): Promise<Actor> {
+export async function actorOf(i: BaseInteraction, s: Services): Promise<Actor> {
   const userId = i.user.id;
   if (!i.guildId || !i.member) return { userId, isOfficer: false };
   const roles = i.member.roles;

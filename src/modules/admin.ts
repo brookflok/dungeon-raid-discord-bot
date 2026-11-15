@@ -8,6 +8,8 @@ import {
 } from 'discord.js';
 import type { Kind, Slots, Template } from '../core/types.js';
 import { UserError, type GuildConfig } from '../core/types.js';
+import { notice } from '../discord/notice.js';
+import { panel } from '../discord/panel.js';
 import { actorOf, type BotModule, type Services } from '../discord/registry.js';
 import { log } from '../log.js';
 import { formatOffsets, parseOffsets } from './admin-parse.js';
@@ -76,10 +78,22 @@ async function handleConfig(
 ): Promise<void> {
   const sub = i.options.getSubcommand();
   if (sub === 'show') {
-    await i.editReply(describeConfig(await s.config.get(guildId)));
+    await i.editReply(notice(describeConfig(await s.config.get(guildId))));
     return;
   }
   const current = await s.config.get(guildId);
+  if (sub === 'panel') {
+    const kind = i.options.getString('kind', true) as Kind;
+    const channelId = current.channels[kind];
+    if (!channelId) throw new UserError(`Set the ${kind} channel first with /config channels.`);
+    const channel = await i.client.channels.fetch(channelId).catch(() => null);
+    if (!channel?.isSendable()) throw new UserError('I cannot send messages in that channel.');
+    const message = await channel.send(panel(kind));
+    // Pinning needs an extra permission; the panel works without it.
+    await message.pin().catch((err: unknown) => log.error('pin panel', { err }));
+    await i.editReply(notice(`The panel is posted in <#${channelId}>.`, 'ok'));
+    return;
+  }
   let next: GuildConfig;
   if (sub === 'channels') {
     const kind = i.options.getString('kind', true) as Kind;
@@ -106,7 +120,7 @@ async function handleConfig(
   } else {
     next = await s.config.update(guildId, { timezone: i.options.getString('zone', true).trim() });
   }
-  await i.editReply(`Saved.\n${describeConfig(next)}`);
+  await i.editReply(notice(describeConfig(next), 'ok', 'Saved'));
 }
 
 async function handleTemplate(
@@ -122,7 +136,7 @@ async function handleTemplate(
     const kind = i.options.getString('kind', true) as 'dungeon' | 'raid';
     const all = await s.templates.listAll(guildId, kind);
     await i.editReply(
-      all.length ? all.map(describeTemplate).join('\n') : `There are no ${kind} templates.`,
+      notice(all.length ? all.map(describeTemplate).join('\n') : `There are no ${kind} templates.`),
     );
     return;
   }
@@ -136,7 +150,7 @@ async function handleTemplate(
       slots,
       reminderOffsetsMin,
     });
-    await i.editReply(`Added.\n${describeTemplate(t)}`);
+    await i.editReply(notice(describeTemplate(t), 'ok', 'Added'));
     return;
   }
 
@@ -156,11 +170,11 @@ async function handleTemplate(
       }
     }
     if (Object.keys(patch).length === 0) throw new UserError('Choose something to change.');
-    await i.editReply(`Saved.\n${describeTemplate(await s.templates.edit(id, patch))}`);
+    await i.editReply(notice(describeTemplate(await s.templates.edit(id, patch)), 'ok', 'Saved'));
     return;
   }
   const t = await s.templates.setEnabled(id, sub === 'enable');
-  await i.editReply(`Saved.\n${describeTemplate(t)}`);
+  await i.editReply(notice(describeTemplate(t), 'ok', 'Saved'));
 }
 
 export const admin: BotModule = {
@@ -217,6 +231,12 @@ export const admin: BotModule = {
           ),
       )
       .addSubcommand((c) => c.setName('show').setDescription('Show the current settings'))
+      .addSubcommand((c) =>
+        c
+          .setName('panel')
+          .setDescription('Post the panel with buttons in the channel of an activity kind')
+          .addStringOption(kindOption(KINDS)),
+      )
       .toJSON(),
     new SlashCommandBuilder()
       .setName('template')
