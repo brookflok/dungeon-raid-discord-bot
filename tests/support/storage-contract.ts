@@ -80,6 +80,10 @@ export function storageContract(name: string, make: () => Promise<Storage>): voi
             channelId: 'c1',
             messageId: 'm1',
             threadId: 't1',
+            outcome: 'completed',
+            report: 'Clean run.',
+            logChannelId: 'c9',
+            logMessageId: 'm9',
           });
           await s.insertActivity(a);
           expect(await s.getActivity(a.id)).toEqual(a);

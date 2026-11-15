@@ -144,3 +144,109 @@ describe('publisher when the thread cannot be started', () => {
     expect(stored.threadId).toBeUndefined();
   });
 });
+
+describe('publisher for a finished activity', () => {
+  async function setup(logChannel: boolean) {
+    const calls: string[] = [];
+    const logged: Record<string, unknown>[] = [];
+    const thread = {
+      isThread: () => true,
+      isSendable: () => true,
+      send: async () => void calls.push('thread note'),
+      setLocked: async () => void calls.push('thread locked'),
+      setArchived: async () => void calls.push('thread archived'),
+    };
+    const posts = {
+      isTextBased: () => true,
+      isSendable: () => true,
+      messages: {
+        edit: async () => (calls.push('post edited'), { id: 'm1', url: 'u' }),
+        delete: async (id: string) => void calls.push(`post ${id} deleted`),
+      },
+    };
+    const logs = {
+      isSendable: () => true,
+      send: async (payload: Record<string, unknown>) => {
+        calls.push('log sent');
+        logged.push(payload);
+        return { id: 'l1', url: 'https://discord.com/channels/g1/log/l1' };
+      },
+      messages: {
+        edit: async (id: string, payload: Record<string, unknown>) => {
+          calls.push(`log ${id} edited`);
+          logged.push(payload);
+        },
+      },
+    };
+    const client = {
+      channels: {
+        fetch: async (id: string) => ({ c1: posts, t1: thread, log: logs })[id] ?? null,
+      },
+      users: { send: async () => undefined },
+    } as unknown as Client;
+
+    const storage = new MemoryStorage();
+    let now = new Date('2026-11-14T12:00:00Z');
+    const activities = new ActivityService({ storage, clock: { now: () => now } });
+    const config = new ConfigService(storage);
+    if (logChannel) await config.update('g1', { channels: { dungeon: 'c1', log: 'log' } });
+    const { activity } = await activities.create({
+      guildId: 'g1',
+      kind: 'dungeon',
+      title: 'SM',
+      starter: { userId: 'u1', label: 'S' },
+      starterRole: 'tank',
+      time: { type: 'at', at: new Date('2026-11-14T13:00:00Z') },
+      slots: { tank: 1, healer: 1 },
+      reminderOffsetsMin: [],
+    });
+    await activities.setPost(activity.id, { channelId: 'c1', messageId: 'm1' });
+    await activities.setThread(activity.id, 't1');
+    const publish = createPublisher(client, activities, config);
+    const starter = { userId: 'u1', isOfficer: false };
+    const title = () => (logged.at(-1)!.embeds as { title: string }[])[0]!.title;
+    const stored = async () => (await activities.get(activity.id))!.activity;
+    const autoFinish = async () => {
+      now = new Date('2026-11-14T16:00:00Z');
+      for (const job of await storage.dueJobs(now)) {
+        const result = await activities.runJob(job);
+        if (result) await publish(result);
+      }
+    };
+    return { id: activity.id, activities, publish, starter, calls, title, stored, autoFinish };
+  }
+
+  it('moves a reported activity to the log, removes the post and closes the thread', async () => {
+    const t = await setup(true);
+    await t.publish(await t.activities.report(t.id, t.starter, 'completed', 'Clean run.'));
+    expect(t.calls).toEqual([
+      'log sent',
+      'post m1 deleted',
+      'thread note',
+      'thread locked',
+      'thread archived',
+    ]);
+    expect(t.title()).toBe('✅ SM — Completed');
+    const stored = await t.stored();
+    expect(stored.logMessageId).toBe('l1');
+    expect(stored.messageId).toBeUndefined();
+  });
+
+  it('moves an unreported activity after 3 hours and updates the entry on a later report', async () => {
+    const t = await setup(true);
+    await t.autoFinish();
+    expect(t.calls.slice(0, 2)).toEqual(['log sent', 'post m1 deleted']);
+    expect(t.title()).toBe('❔ SM — No result reported');
+    await t.publish(await t.activities.report(t.id, t.starter, 'failed'));
+    expect(t.calls.at(-1)).toBe('log l1 edited');
+    expect(t.title()).toBe('❌ SM — Failed');
+    expect(t.calls.filter((c) => c === 'log sent')).toHaveLength(1);
+  });
+
+  it('without a log channel keeps the post and shows the result on it', async () => {
+    const t = await setup(false);
+    await t.publish(await t.activities.report(t.id, t.starter, 'completed'));
+    expect(t.calls).toEqual(['post edited']);
+    expect((await t.stored()).messageId).toBe('m1');
+  });
+});

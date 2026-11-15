@@ -1,4 +1,5 @@
 import {
+  ButtonStyle,
   escapeMarkdown,
   messageLink,
   type APIEmbed,
@@ -8,14 +9,15 @@ import {
 } from 'discord.js';
 import type { ActivityResult, ActivityService, ActivityView, Effect } from '../core/activities.js';
 import type { ConfigService } from '../core/config.js';
-import type { Signup, SignupStatus, TimeSpec } from '../core/types.js';
+import type { Activity, Signup, SignupStatus, TimeSpec } from '../core/types.js';
 import { log } from '../log.js';
-import { COLOR, linkButton, notice, row } from './notice.js';
-import { renderActivity, timeText } from './render.js';
+import { COLOR, button, linkButton, notice, row } from './notice.js';
+import { OUTCOME, finishId, renderActivity, renderLog, timeText } from './render.js';
 
 interface ThreadMessage {
   content: string;
   embeds?: APIEmbed[];
+  components?: ReturnType<typeof row>[];
   allowedMentions: { users: string[] };
 }
 
@@ -86,6 +88,12 @@ function threadMessages({ activity, signups }: ActivityView, effects: Effect[]):
   if (!chunks[0]) return [];
   const bad = effects.some((e) => e.type === 'cancelled');
   chunks[0].embeds = [{ description: lines.join('\n'), color: bad ? COLOR.closed : COLOR.ok }];
+  if (effects.some((e) => e.type === 'filled' || e.type === 'refilled')) {
+    // For the starter and officers; the finish module refuses everyone else.
+    chunks[0].components = [
+      row(button(finishId(activity.id), 'Finish', ButtonStyle.Secondary, '🏁')),
+    ];
+  }
   return chunks;
 }
 
@@ -148,6 +156,60 @@ export function createPublisher(
     return thread;
   }
 
+  /**
+   * Moves a finished activity to the log channel: sends (or updates) the log entry, removes the
+   * post and closes the thread. False when there is no log channel or the entry cannot be shown;
+   * the post then stays where it is.
+   */
+  async function moveToLog(view: ActivityView): Promise<boolean> {
+    const { activity } = view;
+    try {
+      const channelId = activity.logChannelId ?? (await config.get(activity.guildId)).channels.log;
+      if (!channelId) return false;
+      const channel = await client.channels.fetch(channelId);
+      if (!channel?.isSendable()) throw new Error(`channel ${channelId} is not sendable`);
+      const entry = renderLog(view);
+      if (activity.logMessageId) {
+        await channel.messages.edit(activity.logMessageId, entry);
+        return true;
+      }
+      const message = await channel.send(entry);
+      await activities.setLog(activity.id, { channelId, messageId: message.id });
+      await closePost(activity, message.url);
+      return true;
+    } catch (err) {
+      log.error('publish: log', { activityId: activity.id, err });
+      return false;
+    }
+  }
+
+  /** Removes the moved activity's post and leaves a last note in its thread before closing it. */
+  async function closePost(activity: Activity, logUrl: string): Promise<void> {
+    try {
+      if (activity.channelId && activity.messageId) {
+        const channel = await client.channels.fetch(activity.channelId);
+        if (channel?.isTextBased()) await channel.messages.delete(activity.messageId);
+      }
+    } catch (err) {
+      log.error('publish: remove post', { activityId: activity.id, err });
+    }
+    try {
+      if (!activity.threadId) return;
+      const thread = await client.channels.fetch(activity.threadId).catch(() => null);
+      if (!thread?.isThread()) return;
+      const result = activity.outcome ? OUTCOME[activity.outcome].name : 'no result reported yet';
+      await thread.send({
+        ...notice(`This group is closed: ${result}.`, 'info', '🏁 Finished'),
+        components: [row(linkButton(logUrl, 'Go to the log entry'))],
+      });
+      // Locking needs the Manage Threads permission; archiving alone still hides the thread.
+      await thread.setLocked(true).catch(() => undefined);
+      await thread.setArchived(true);
+    } catch (err) {
+      log.error('publish: close thread', { activityId: activity.id, err });
+    }
+  }
+
   return async (r) => {
     // Re-read so the post shows the latest stored state and the stored ids are current.
     let view: ActivityView = r;
@@ -157,6 +219,7 @@ export function createPublisher(
       log.error('publish: re-read', { activityId: r.activity.id, err });
     }
     const { activity, signups } = view;
+    if (activity.state === 'finished' && (await moveToLog(view))) return;
 
     let post: Message | undefined;
     try {

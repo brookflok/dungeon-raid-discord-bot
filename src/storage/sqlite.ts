@@ -56,6 +56,14 @@ function toActivity(r: Row): Activity {
   if (channelId !== undefined) a.channelId = channelId;
   if (messageId !== undefined) a.messageId = messageId;
   if (threadId !== undefined) a.threadId = threadId;
+  const outcome = opt<Activity['outcome']>(r.outcome);
+  const report = opt<string>(r.report);
+  const logChannelId = opt<string>(r.log_channel_id);
+  const logMessageId = opt<string>(r.log_message_id);
+  if (outcome !== undefined) a.outcome = outcome;
+  if (report !== undefined) a.report = report;
+  if (logChannelId !== undefined) a.logChannelId = logChannelId;
+  if (logMessageId !== undefined) a.logMessageId = logMessageId;
   return a;
 }
 
@@ -131,6 +139,10 @@ const ACTIVITY_PARAMS = (a: Activity) => ({
   channelId: a.channelId ?? null,
   messageId: a.messageId ?? null,
   threadId: a.threadId ?? null,
+  outcome: a.outcome ?? null,
+  report: a.report ?? null,
+  logChannelId: a.logChannelId ?? null,
+  logMessageId: a.logMessageId ?? null,
 });
 
 const TEMPLATE_PARAMS = (t: Template) => ({
@@ -187,9 +199,11 @@ export class SqliteStorage implements Storage {
     this.db
       .prepare(
         `INSERT OR REPLACE INTO activities (id, guild_id, kind, title, description, starter_id, time, slots,
-           reminder_offsets_min, state, created_at, filled_at, channel_id, message_id, thread_id)
+           reminder_offsets_min, state, created_at, filled_at, channel_id, message_id, thread_id,
+           outcome, report, log_channel_id, log_message_id)
          VALUES (@id, @guildId, @kind, @title, @description, @starterId, @time, @slots,
-           @reminders, @state, @createdAt, @filledAt, @channelId, @messageId, @threadId)`,
+           @reminders, @state, @createdAt, @filledAt, @channelId, @messageId, @threadId,
+           @outcome, @report, @logChannelId, @logMessageId)`,
       )
       .run(ACTIVITY_PARAMS(a));
     return Promise.resolve();

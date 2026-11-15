@@ -154,7 +154,10 @@ Any other reverse proxy (nginx, Traefik, or the one your hosting provider offers
    /config channels kind:dungeon channel:#dungeon-groups
    /config channels kind:raid channel:#raids
    /config channels kind:event channel:#events
+   /config channels kind:log channel:#activity-log
    ```
+
+   The log channel receives every finished dungeon, raid and event with its result. The bot needs View Channel, Send Messages and Embed Links there. Without a log channel, finished posts stay in place and turn grey. To lock the thread of a moved group the bot also needs **Manage Threads**; without it the thread is only archived.
 
 4. Name the officer role. Officers may post raids and change settings:
 
@@ -230,6 +233,12 @@ Dungeon finder:
 - [ ] No thread permission: in the dungeon channel's permission settings, remove the bot's **Create Public Threads** permission, then fill a new `Test pair` group. No thread opens; "✅ The group is full…" and the mention of both members arrive as replies to the post, and both members still receive the direct message. Give the permission back afterwards.
 - [ ] Deleted post: start a group with a `when` about 20 minutes ahead, delete its post in Discord, and click nothing. When the reminder is due (15 minutes before the start), the log shows an error line with `"msg":"publish: post"`, and the bot keeps working: starting another group still works.
 - [ ] Closed group: a cancelled post shows "🚫 Cancelled" and no buttons. To check the answer to a late click, give a test account two characters (`/profile add` twice), let it click **Tank** or **DPS** on an open group so that the private character menu appears, cancel the group with `/dungeon cancel`, then pick a character in the menu. The answer is "This group is closed."
+
+Results and log:
+
+- [ ] Finish with a result: the starter presses **Finish** on a group's post (or on the "group is full" message in the thread), picks "Completed" and writes a report. The post disappears from the dungeon channel, the log channel shows a card "✅ … — Completed" with the members and the report, and the thread gets a "Finished" note and is archived.
+- [ ] Only the starter or an officer: another member presses **Finish** and gets "Only the starter or an officer can do that."
+- [ ] No result after 3 hours: a group with a start time is left alone until 3 hours after the start. It moves to the log as "❔ … — No result reported" with a mention of the starter and an **Add result** button; after the starter uses it, the entry changes to the result and the button disappears.
 
 Raid finder:
 

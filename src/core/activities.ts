@@ -6,6 +6,7 @@ import {
   type Activity,
   type Job,
   type Kind,
+  type Outcome,
   type Role,
   type Signup,
   type Slots,
@@ -223,6 +224,32 @@ export class ActivityService {
     });
   }
 
+  /**
+   * Records the result. Finishes an open or full activity; an activity that was finished
+   * automatically gets its result added once.
+   */
+  report(
+    activityId: string,
+    actor: Actor,
+    outcome: Outcome,
+    report?: string,
+  ): Promise<ActivityResult> {
+    return this.serialize(async () => {
+      const activity = await this.requireActivity(activityId);
+      if (actor.userId !== activity.starterId && !actor.isOfficer) {
+        throw new UserError('Only the starter or an officer can do that.');
+      }
+      if (activity.outcome) throw new UserError('The result is already recorded.');
+      if (!['open', 'full', 'finished'].includes(activity.state)) throw new UserError(CLOSED);
+      activity.state = 'finished';
+      activity.outcome = outcome;
+      const text = report?.trim();
+      if (text) activity.report = text;
+      await this.storage.updateActivity(activity);
+      return this.finish(activityId, [{ type: 'closed', reason: 'finished' }]);
+    });
+  }
+
   /** Carries out a due job. Returns null when there is nothing to announce. */
   runJob(job: Job): Promise<ActivityResult | null> {
     return this.serialize(async () => {
@@ -262,6 +289,20 @@ export class ActivityService {
     return this.serialize(async () => {
       const activity = await this.requireActivity(activityId);
       await this.storage.updateActivity({ ...activity, ...post });
+    });
+  }
+
+  /** The activity was moved to the log channel: stores the entry and forgets the removed post. */
+  setLog(activityId: string, log: { channelId: string; messageId: string }): Promise<void> {
+    return this.serialize(async () => {
+      const activity = await this.requireActivity(activityId);
+      delete activity.channelId;
+      delete activity.messageId;
+      await this.storage.updateActivity({
+        ...activity,
+        logChannelId: log.channelId,
+        logMessageId: log.messageId,
+      });
     });
   }
 

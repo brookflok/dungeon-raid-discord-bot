@@ -5,6 +5,7 @@ import { ConfigService } from '../../src/core/config.js';
 import { ProfileService } from '../../src/core/profiles.js';
 import { TemplateService } from '../../src/core/templates.js';
 import type { Services } from '../../src/discord/registry.js';
+import { finish } from '../../src/discord/finish.js';
 import { manage } from '../../src/discord/manage.js';
 import { mainMenu } from '../../src/discord/notify-linked.js';
 import { panel } from '../../src/discord/panel.js';
@@ -273,5 +274,51 @@ describe('choosing the main character', () => {
       { label: 'Thorin, Warrior 24', value: main.id, default: true },
       { label: 'Lyra, Mage 12', value: alt.id, default: false },
     ]);
+  });
+});
+
+describe('finish form', () => {
+  async function group(starterId: string): Promise<string> {
+    const { activity } = await s.activities.create({
+      guildId: 'g1',
+      kind: 'dungeon',
+      title: 'Deadmines',
+      starter: { userId: starterId, label: 'S' },
+      starterRole: 'tank',
+      time: { type: 'asap' },
+      slots: { tank: 1, healer: 1 },
+      reminderOffsetsMin: [],
+    });
+    return activity.id;
+  }
+
+  it('opens for the starter with the three results and an optional report', async () => {
+    const id = await group('u1');
+    const form = await opened(finish, [id]);
+    expect(form.custom_id).toBe(`finish:${id}`);
+    expect(fieldIds(form)).toEqual(['outcome', 'report']);
+    const { options } = (form.components[0] as { component: { options: { value: string }[] } })
+      .component;
+    expect(options.map((o) => o.value)).toEqual(['completed', 'failed', 'not_happened']);
+  });
+
+  it('records the result and the report', async () => {
+    const id = await group('u1');
+    await submitted(finish, { outcome: 'failed', report: 'Wiped on the last boss.' }, [id]);
+    const { activity } = (await s.activities.get(id))!;
+    expect([activity.state, activity.outcome, activity.report]).toEqual([
+      'finished',
+      'failed',
+      'Wiped on the last boss.',
+    ]);
+    expect(published).toHaveLength(1);
+  });
+
+  it('does not open for a member who is neither the starter nor an officer', async () => {
+    const id = await group('someone-else');
+    const i = { ...member, memberPermissions: { has: () => false } };
+    await expect(
+      finish.onComponent!(i as unknown as MessageComponentInteraction, s, [id]),
+    ).rejects.toThrow('Only the starter or an officer can do that.');
   });
 });

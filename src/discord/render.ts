@@ -11,6 +11,7 @@ import type {
   Activity,
   ActivityState,
   Kind,
+  Outcome,
   Role,
   Signup,
   SignupStatus,
@@ -34,6 +35,13 @@ const STATUS: Partial<Record<ActivityState, string>> = {
   cancelled: '🚫 Cancelled',
   expired: '⌛ Expired',
 };
+export const OUTCOME: Record<Outcome, { emoji: string; name: string; color: number }> = {
+  completed: { emoji: '✅', name: 'Completed', color: COLOR.ok },
+  failed: { emoji: '❌', name: 'Failed', color: COLOR.error },
+  not_happened: { emoji: '🚫', name: 'Did not happen', color: COLOR.closed },
+};
+const NO_RESULT = { emoji: '❔', name: 'No result reported', color: 0xf59e0b };
+const LOG_MEMBERS = 60; // members listed in a log entry
 const MAX_LENGTH = 4096; // an embed description
 const BAR = 12;
 
@@ -112,6 +120,9 @@ function footer(activity: Activity): string {
   return `${KIND[activity.kind].name} · reminder ${offsets.map(span).join(' and ')} before`;
 }
 
+/** The custom id of the "Finish" and "Add result" buttons, handled by the finish module. */
+export const finishId = (activityId: string): string => `finish:${activityId}`;
+
 function buttons(activity: Activity): ActionRowData<InteractionButtonComponentData>[] {
   const button = (
     action: string,
@@ -135,6 +146,11 @@ function buttons(activity: Activity): ActionRowData<InteractionButtonComponentDa
     );
   }
   all.push(button('leave', 'Leave', ButtonStyle.Danger));
+  // For the starter and officers; the finish module refuses everyone else.
+  all.push({
+    ...button('', 'Finish', ButtonStyle.Secondary, '🏁'),
+    customId: finishId(activity.id),
+  });
   const rows: ActionRowData<InteractionButtonComponentData>[] = [];
   for (let n = 0; n < all.length; n += 5) {
     rows.push({ type: ComponentType.ActionRow, components: all.slice(n, n + 5) });
@@ -163,7 +179,8 @@ export function renderActivity(view: ActivityView): {
     }
     description = text(activity, signups, fits);
   }
-  const status = STATUS[activity.state];
+  const result = activity.outcome && OUTCOME[activity.outcome];
+  const status = result ? `${result.emoji} ${result.name}` : STATUS[activity.state];
   const title = `${KIND[activity.kind].emoji} ${escape(activity.title)}`.slice(0, 200);
   const embed: APIEmbed = {
     title: status ? `${title} — ${status}` : title,
@@ -172,4 +189,63 @@ export function renderActivity(view: ActivityView): {
     footer: { text: footer(activity) },
   };
   return { content: '', embeds: [embed], components: status ? [] : buttons(activity) };
+}
+
+/**
+ * The entry in the log channel for a finished activity. Without a result it mentions the starter
+ * and carries the "Add result" button.
+ */
+export function renderLog(view: ActivityView): {
+  content: string;
+  embeds: APIEmbed[];
+  components: ActionRowData<InteractionButtonComponentData>[];
+  allowedMentions: { users: string[] };
+} {
+  const { activity } = view;
+  const result = activity.outcome ? OUTCOME[activity.outcome] : NO_RESULT;
+  const when =
+    activity.time.type === 'at'
+      ? `<t:${Math.floor(activity.time.at.getTime() / 1000)}:F>`
+      : `Posted <t:${Math.floor(activity.createdAt.getTime() / 1000)}:F>`;
+  const lines = [`🕐 ${when}`, `👤 Started by <@${activity.starterId}>`, ''];
+  const confirmed = view.signups.filter((s) => s.status === 'confirmed');
+  for (const r of ROLES) {
+    for (const s of confirmed.filter((x) => x.role === r.role)) {
+      lines.push(`${r.emoji} ${escape(s.label)}`);
+    }
+  }
+  if (confirmed.length === 0) lines.push('Nobody signed up.');
+  if (confirmed.length > LOG_MEMBERS) {
+    lines.splice(3 + LOG_MEMBERS, Infinity, `… and ${confirmed.length - LOG_MEMBERS} more`);
+  }
+  if (activity.report) lines.push('', '📝 **Report**', escape(activity.report));
+  const title = `${result.emoji} ${escape(activity.title)}`.slice(0, 200);
+  const embed: APIEmbed = {
+    title: `${title} — ${result.name}`,
+    description: lines.join('\n'),
+    color: result.color,
+    footer: { text: KIND[activity.kind].name },
+  };
+  if (activity.outcome) {
+    return { content: '', embeds: [embed], components: [], allowedMentions: { users: [] } };
+  }
+  return {
+    content: `<@${activity.starterId}> how did it go? Add the result with the button below.`,
+    embeds: [embed],
+    components: [
+      {
+        type: ComponentType.ActionRow,
+        components: [
+          {
+            type: ComponentType.Button,
+            customId: finishId(activity.id),
+            label: 'Add result',
+            style: ButtonStyle.Primary,
+            emoji: '📝',
+          },
+        ],
+      },
+    ],
+    allowedMentions: { users: [activity.starterId] },
+  };
 }

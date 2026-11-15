@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ActivityView } from '../../src/core/activities.js';
 import type { Activity, Signup } from '../../src/core/types.js';
-import { discordTime, renderActivity } from '../../src/discord/render.js';
+import { discordTime, renderActivity, renderLog } from '../../src/discord/render.js';
 
 const created = new Date('2026-11-14T12:00:00Z');
 
@@ -47,7 +47,13 @@ describe('renderActivity', () => {
     expect(body(r)).toContain('🛡 **TANK** 1/1\n　Brook Flok, Priest 37');
     expect(body(r)).toContain('💚 **HEALER** 0/1\n　*open*');
     expect(body(r)).toContain('Started by <@u1>');
-    expect(buttonIds(r)).toEqual(['act:a1:tank', 'act:a1:healer', 'act:a1:dps', 'act:a1:leave']);
+    expect(buttonIds(r)).toEqual([
+      'act:a1:tank',
+      'act:a1:healer',
+      'act:a1:dps',
+      'act:a1:leave',
+      'finish:a1',
+    ]);
   });
 
   it('shows progress and the roles still needed', () => {
@@ -91,6 +97,7 @@ describe('renderActivity', () => {
       'act:a1:tentative',
       'act:a1:absent',
       'act:a1:leave',
+      'finish:a1',
     ]);
     expect(body(r)).toContain('❔ **TENTATIVE** 1\n　Maybe Mage');
     expect(card(r).footer?.text).toBe('Raid · reminder 1 d and 1 h before');
@@ -103,8 +110,8 @@ describe('renderActivity', () => {
         { role: 'participant' },
       ]),
     );
-    expect(buttonLabels(r)).toEqual(['Join', 'Leave']);
-    expect(buttonIds(r)).toEqual(['act:a1:participant', 'act:a1:leave']);
+    expect(buttonLabels(r)).toEqual(['Join', 'Leave', 'Finish']);
+    expect(buttonIds(r)).toEqual(['act:a1:participant', 'act:a1:leave', 'finish:a1']);
     expect(body(r)).toContain('👥 **1** coming');
     expect(body(r)).toContain('1/∞');
   });
@@ -157,6 +164,60 @@ describe('renderActivity', () => {
     const r = renderActivity(view({ kind: 'raid', slots: { dps: 40 } }, signups));
     expect(body(r)).toContain('Member 40 Surname');
     expect(body(r)).not.toContain('more');
+  });
+});
+
+describe('a finished activity', () => {
+  it('shows the reported result in the title of the post', () => {
+    const r = renderActivity(view({ state: 'finished', outcome: 'failed' }));
+    expect(r.embeds[0]?.title).toBe('⚔️ Scarlet Monastery — ❌ Failed');
+    expect(r.components).toEqual([]);
+  });
+});
+
+describe('renderLog', () => {
+  const signups = [
+    { role: 'dps' as const, label: 'Lyra, Mage 22' },
+    { role: 'tank' as const, label: 'Thorin, Warrior 24' },
+    { role: 'dps' as const, status: 'waitlist' as const, label: 'Late' },
+  ];
+
+  it('shows the result, the members by role and the report', () => {
+    const r = renderLog(
+      view({ state: 'finished', outcome: 'completed', report: 'Clean **run**.' }, signups),
+    );
+    const card = r.embeds[0]!;
+    expect(card.title).toBe('✅ Scarlet Monastery — Completed');
+    expect(card.color).toBe(0x22c55e);
+    expect(card.description).toContain('🛡 Thorin, Warrior 24\n🗡 Lyra, Mage 22');
+    expect(card.description).not.toContain('Late');
+    expect(card.description).toContain('📝 **Report**\nClean \\*\\*run\\*\\*.');
+    expect(r.content).toBe('');
+    expect(r.components).toEqual([]);
+    expect(r.allowedMentions).toEqual({ users: [] });
+  });
+
+  it('without a result mentions the starter and offers the Add result button', () => {
+    const r = renderLog(view({ state: 'finished' }, signups));
+    expect(r.embeds[0]?.title).toBe('❔ Scarlet Monastery — No result reported');
+    expect(r.content).toContain('<@u1>');
+    expect(r.allowedMentions).toEqual({ users: ['u1'] });
+    expect(r.components[0]?.components.map((c) => [c.customId, c.label])).toEqual([
+      ['finish:a1', 'Add result'],
+    ]);
+  });
+
+  it('shows the start time of a timed activity and says when nobody signed up', () => {
+    const r = renderLog(
+      view({
+        state: 'finished',
+        outcome: 'not_happened',
+        time: { type: 'at', at: new Date('2026-11-14T19:30:00Z') },
+      }),
+    );
+    expect(r.embeds[0]?.title).toBe('🚫 Scarlet Monastery — Did not happen');
+    expect(r.embeds[0]?.description).toContain('🕐 <t:1794684600:F>');
+    expect(r.embeds[0]?.description).toContain('Nobody signed up.');
   });
 });
 

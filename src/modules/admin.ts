@@ -15,6 +15,8 @@ import { log } from '../log.js';
 import { formatOffsets, parseOffsets } from './admin-parse.js';
 
 const KINDS: Kind[] = ['dungeon', 'raid', 'event'];
+// log: the channel finished activities are moved to.
+const CHANNEL_KINDS: (Kind | 'log')[] = [...KINDS, 'log'];
 const TEMPLATE_KINDS: ('dungeon' | 'raid')[] = ['dungeon', 'raid'];
 const SLOT_ROLES = ['tank', 'healer', 'dps'] as const;
 
@@ -45,7 +47,7 @@ const templateOption = (o: SlashCommandStringOption) =>
   o.setName('template').setDescription('Which template').setRequired(true).setAutocomplete(true);
 
 function describeConfig(c: GuildConfig): string {
-  const channels = KINDS.map(
+  const channels = CHANNEL_KINDS.map(
     (k) => `${k}: ${c.channels[k] ? `<#${c.channels[k]}>` : 'not set'}`,
   ).join('; ');
   const roles = c.officerRoleIds.length
@@ -96,7 +98,7 @@ async function handleConfig(
   }
   let next: GuildConfig;
   if (sub === 'channels') {
-    const kind = i.options.getString('kind', true) as Kind;
+    const kind = i.options.getString('kind', true) as Kind | 'log';
     const channel = i.options.getChannel('channel', true);
     next = await s.config.update(guildId, {
       channels: { ...current.channels, [kind]: channel.id },
@@ -187,8 +189,8 @@ export const admin: BotModule = {
       .addSubcommand((c) =>
         c
           .setName('channels')
-          .setDescription('Choose the channel an activity kind posts in')
-          .addStringOption(kindOption(KINDS))
+          .setDescription('Choose the channel an activity kind posts in, or the log channel')
+          .addStringOption(kindOption(CHANNEL_KINDS))
           .addChannelOption((o) =>
             o
               .setName('channel')

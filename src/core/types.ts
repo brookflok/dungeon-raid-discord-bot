@@ -2,6 +2,7 @@ export type Role = 'tank' | 'healer' | 'dps' | 'participant';
 export type Kind = 'dungeon' | 'raid' | 'event';
 export type TimeSpec = { type: 'at'; at: Date } | { type: 'asap' } | { type: 'flexible' };
 export type ActivityState = 'open' | 'full' | 'finished' | 'cancelled' | 'expired';
+export type Outcome = 'completed' | 'failed' | 'not_happened';
 export type SignupStatus = 'confirmed' | 'waitlist' | 'tentative' | 'absent';
 export type Slots = Partial<Record<Role, number | null>>; // null = unlimited
 
@@ -21,6 +22,10 @@ export interface Activity {
   channelId?: string;
   messageId?: string;
   threadId?: string;
+  outcome?: Outcome; // the result the starter or an officer reported
+  report?: string;
+  logChannelId?: string; // set once the activity was moved to the log channel
+  logMessageId?: string;
 }
 
 export interface Signup {
@@ -44,7 +49,7 @@ export interface Template {
 
 export interface GuildConfig {
   guildId: string;
-  channels: Partial<Record<Kind, string>>;
+  channels: Partial<Record<Kind | 'log', string>>; // log: where finished activities are moved
   officerRoleIds: string[];
   reminders: Record<Kind, number[]>;
   timezone: string;

@@ -5,6 +5,7 @@ A Discord bot for a World of Warcraft: Forever guild. Members find dungeon group
 - **Dungeon finder:** press "Start a dungeon group" and pick a dungeon, your role and a time from dropdowns (a day and time, "as soon as possible" or "flexible"). Others join as Tank, Healer or DPS. When the group is full, everyone is mentioned in a thread, gets a direct message, and is reminded before the start.
 - **Raid finder:** officers post a raid; members sign up by role, as tentative, or as absent. Extra sign-ups go on a waitlist and move up when a spot opens.
 - **Event planner:** a free-form event with a description and limited or unlimited spots.
+- **Results log:** the starter finishes a group with a result and an optional report; the post moves to a public log channel.
 - **Character profiles:** members link their Battle.net account and sign up with their Forever character.
 
 ## Commands
@@ -100,12 +101,15 @@ As a server administrator:
 /config channels kind:raid channel:#raids
 /config channels kind:event channel:#events
 /config officers role:@Officer action:add
+/config channels kind:log channel:#activity-log
 /config panel kind:dungeon
 /config panel kind:raid
 /config panel kind:event
 ```
 
 `/config panel` posts a box with buttons ("Start a dungeon group", "My characters", "Link Battle.net") in that kind's channel, so members do not need to know the slash commands. The bot registers its slash commands itself each time it starts.
+
+The log channel is where finished groups are moved: the starter (or an officer) presses **Finish** on the post or in the group's thread, picks a result (completed, failed, did not happen) and can add a report. Groups nobody finishes are moved there 3 hours after their start with a mention of the starter and an **Add result** button.
 
 Check the result with `/config show`. The default timezone for typed times is `Europe/Berlin`; change it with `/config timezone`.
 

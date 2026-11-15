@@ -1,3 +1,4 @@
+import { finish } from '../discord/finish.js';
 import { manage } from '../discord/manage.js';
 import type { BotModule } from '../discord/registry.js';
 import { signupButtons } from '../discord/signup-buttons.js';
@@ -15,6 +16,7 @@ import { raids } from './raids.js';
 export const modules: BotModule[] = [
   signupButtons,
   manage,
+  finish,
   dungeons,
   raids,
   events,
