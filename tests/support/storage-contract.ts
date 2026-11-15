@@ -77,6 +77,7 @@ export function storageContract(name: string, make: () => Promise<Storage>): voi
           const a = activity(`a${i}`, time, {
             description: 'bring flasks',
             filledAt: d('2026-11-14T11:00:00Z'),
+            startedAt: d('2026-11-14T11:30:00Z'),
             channelId: 'c1',
             messageId: 'm1',
             threadId: 't1',

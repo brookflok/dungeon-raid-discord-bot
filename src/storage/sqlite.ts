@@ -64,6 +64,8 @@ function toActivity(r: Row): Activity {
   if (report !== undefined) a.report = report;
   if (logChannelId !== undefined) a.logChannelId = logChannelId;
   if (logMessageId !== undefined) a.logMessageId = logMessageId;
+  const startedAt = optDate(r.started_at);
+  if (startedAt !== undefined) a.startedAt = startedAt;
   return a;
 }
 
@@ -143,6 +145,7 @@ const ACTIVITY_PARAMS = (a: Activity) => ({
   report: a.report ?? null,
   logChannelId: a.logChannelId ?? null,
   logMessageId: a.logMessageId ?? null,
+  startedAt: a.startedAt ? iso(a.startedAt) : null,
 });
 
 const TEMPLATE_PARAMS = (t: Template) => ({
@@ -200,10 +203,10 @@ export class SqliteStorage implements Storage {
       .prepare(
         `INSERT OR REPLACE INTO activities (id, guild_id, kind, title, description, starter_id, time, slots,
            reminder_offsets_min, state, created_at, filled_at, channel_id, message_id, thread_id,
-           outcome, report, log_channel_id, log_message_id)
+           outcome, report, log_channel_id, log_message_id, started_at)
          VALUES (@id, @guildId, @kind, @title, @description, @starterId, @time, @slots,
            @reminders, @state, @createdAt, @filledAt, @channelId, @messageId, @threadId,
-           @outcome, @report, @logChannelId, @logMessageId)`,
+           @outcome, @report, @logChannelId, @logMessageId, @startedAt)`,
       )
       .run(ACTIVITY_PARAMS(a));
     return Promise.resolve();

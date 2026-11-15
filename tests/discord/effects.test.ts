@@ -250,3 +250,111 @@ describe('publisher for a finished activity', () => {
     expect((await t.stored()).messageId).toBe('m1');
   });
 });
+
+describe('publisher for an event', () => {
+  async function setup() {
+    const calls: string[] = [];
+    const thread = {
+      id: 't1',
+      isThread: () => true,
+      isSendable: () => true,
+      send: async (m: { content: string }) => void calls.push(`thread: ${m.content}`),
+      members: { add: async (id: string) => void calls.push(`added ${id}`) },
+    };
+    const post = {
+      id: 'm1',
+      url: 'u',
+      startThread: async () => (calls.push('thread started'), thread),
+    };
+    const channel = {
+      isTextBased: () => true,
+      isSendable: () => true,
+      send: async () => post,
+      messages: { edit: async () => post },
+    };
+    const client = {
+      channels: { fetch: async (id: string) => ({ c1: channel, t1: thread })[id] ?? null },
+      users: { send: async () => undefined },
+    } as unknown as Client;
+    const storage = new MemoryStorage();
+    const activities = new ActivityService({
+      storage,
+      clock: { now: () => new Date('2026-11-14T12:00:00Z') },
+    });
+    const config = new ConfigService(storage);
+    await config.update('g1', { channels: { event: 'c1' } });
+    const publish = createPublisher(client, activities, config);
+    const created = await activities.create({
+      guildId: 'g1',
+      kind: 'event',
+      title: 'Fishing',
+      starter: { userId: 'u1', label: 'S' },
+      time: { type: 'asap' },
+      slots: { participant: null },
+      reminderOffsetsMin: [],
+    });
+    await publish(created);
+    return { id: created.activity.id, activities, publish, calls };
+  }
+
+  it('starts the thread when the event is posted and brings the starter in', async () => {
+    const t = await setup();
+    expect(t.calls).toEqual(['thread started', 'thread: <@u1>']);
+    expect((await t.activities.get(t.id))!.activity.threadId).toBe('t1');
+  });
+
+  it('adds each member to the thread when they join', async () => {
+    const t = await setup();
+    t.calls.length = 0;
+    await t.publish(await t.activities.signUp(t.id, 'u2', { role: 'participant', label: 'A' }));
+    await t.publish(await t.activities.leave(t.id, 'u2'));
+    expect(t.calls).toEqual(['added u2']);
+  });
+});
+
+describe('publisher for a started group', () => {
+  it('opens the thread for the members signed up and offers Finish', async () => {
+    const sent: Record<string, unknown>[] = [];
+    const thread = {
+      id: 't1',
+      isThread: () => true,
+      isSendable: () => true,
+      send: async (m: Record<string, unknown>) => void sent.push(m),
+    };
+    const post = { id: 'm1', url: 'u', startThread: async () => thread };
+    const channel = {
+      isTextBased: () => true,
+      isSendable: () => true,
+      messages: { edit: async () => post },
+    };
+    const client = {
+      channels: { fetch: async (id: string) => (id === 'c1' ? channel : null) },
+      users: { send: async () => undefined },
+    } as unknown as Client;
+    const storage = new MemoryStorage();
+    const activities = new ActivityService({
+      storage,
+      clock: { now: () => new Date('2026-11-14T12:00:00Z') },
+    });
+    const { activity } = await activities.create({
+      guildId: 'g1',
+      kind: 'dungeon',
+      title: 'SM',
+      starter: { userId: 'u1', label: 'S' },
+      starterRole: 'tank',
+      time: { type: 'asap' },
+      slots: { tank: 1, healer: 1, dps: 3 },
+      reminderOffsetsMin: [],
+    });
+    await activities.setPost(activity.id, { channelId: 'c1', messageId: 'm1' });
+    await activities.signUp(activity.id, 'u2', { role: 'dps', label: 'D' });
+    const started = await activities.startNow(activity.id, { userId: 'u1', isOfficer: false });
+    await createPublisher(client, activities, new ConfigService(storage))(started);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.content).toBe('<@u1> <@u2>');
+    expect((sent[0]!.embeds as { description: string }[])[0]!.description).toBe(
+      '🚀 Starting now with 2 players. Sign-ups are closed; fill the rest in game.',
+    );
+    expect(JSON.stringify(sent[0]!.components)).toContain(`finish:${activity.id}`);
+  });
+});

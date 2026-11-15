@@ -16,6 +16,7 @@ export function planJobs(a: Activity, now: Date): Omit<Job, 'id'>[] {
     dueAt: new Date(at),
   });
 
+  if (a.startedAt) return [job('finish', a.startedAt.getTime() + FINISH_AFTER_MS)];
   if (a.time.type === 'at') {
     const start = a.time.at.getTime();
     const jobs = a.reminderOffsetsMin

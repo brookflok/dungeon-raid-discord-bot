@@ -5,6 +5,9 @@ A Discord bot for a World of Warcraft: Forever guild. Members find dungeon group
 - **Dungeon finder:** press "Start a dungeon group" and pick a dungeon, your role and a time from dropdowns (a day and time, "as soon as possible" or "flexible"). Others join as Tank, Healer or DPS. When the group is full, everyone is mentioned in a thread, gets a direct message, and is reminded before the start.
 - **Raid finder:** officers post a raid; members sign up by role, as tentative, or as absent. Extra sign-ups go on a waitlist and move up when a spot opens.
 - **Event planner:** a free-form event with a description and limited or unlimited spots.
+- **Start now:** the starter of a dungeon or raid that is not full can start with the players signed up so far (at least 2); sign-ups close and the group gets its thread.
+- **Event threads:** every event gets a thread when it is posted, and members are added to it as they join.
+- **Private reports:** on finishing, the starter can also send a report about bad behaviour that only the officers' channel receives.
 - **Results log:** the starter finishes a group with a result and an optional report; the post moves to a public log channel.
 - **Character profiles:** members link their Battle.net account and sign up with their Forever character.
 
@@ -102,6 +105,7 @@ As a server administrator:
 /config channels kind:event channel:#events
 /config officers role:@Officer action:add
 /config channels kind:log channel:#activity-log
+/config channels kind:officers channel:#officer-reports
 /config panel kind:dungeon
 /config panel kind:raid
 /config panel kind:event
@@ -111,7 +115,7 @@ As a server administrator:
 
 `/config panel` posts a box with buttons ("Start a dungeon group", "My characters", "Link Battle.net") in that kind's channel, so members do not need to know the slash commands. `/config panel kind:all` posts one box with "Host a dungeon", "Host a raid" and "Host an event" in the channel where you run it. `/config hosts` sets which roles may host a kind besides officers; without a host role, everyone can host dungeons and events and only officers can host raids. The bot registers its slash commands itself each time it starts.
 
-The log channel is where finished groups are moved: the starter (or an officer) presses **Finish** on the post or in the group's thread, picks a result (completed, failed, did not happen) and can add a report. Groups nobody finishes are moved there 3 hours after their start with a mention of the starter and an **Add result** button.
+The log channel is where finished groups are moved: the starter (or an officer) presses **Finish** on the post or in the group's thread, picks a result (completed, failed, did not happen) and can add a report. Groups nobody finishes are moved there 3 hours after their start with a mention of the starter and an **Add result** button. The officers channel should be visible to officers only: once it is set, the Finish form has a third field, "Private report to the officers", whose text is posted only there.
 
 Check the result with `/config show`. The default timezone for typed times is `Europe/Berlin`; change it with `/config timezone`.
 

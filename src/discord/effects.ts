@@ -31,11 +31,13 @@ export function recipients(e: Effect, signups: Signup[]): string[] {
       return withStatus('confirmed', 'waitlist', 'tentative');
     case 'filled':
     case 'refilled':
+    case 'started':
     case 'reminder':
       return withStatus('confirmed', 'tentative'); // tentative exists only in raids
     case 'promoted':
     case 'starterChanged':
       return [e.userId];
+    case 'joined':
     case 'closed':
       return [];
   }
@@ -52,8 +54,10 @@ export function mentionChunks(userIds: string[]): ThreadMessage[] {
 }
 
 /** The thread line for an effect; promoted and starterChanged name their member inline. */
-function effectText(e: Effect, time: TimeSpec): string | undefined {
+function effectText(e: Effect, time: TimeSpec, confirmed: number): string | undefined {
   switch (e.type) {
+    case 'started':
+      return `🚀 Starting now with ${confirmed} players. Sign-ups are closed; fill the rest in game.`;
     case 'filled':
       if (time.type === 'at') return `✅ The group is full! Starts ${timeText(time)}`;
       return time.type === 'asap'
@@ -78,8 +82,9 @@ function effectText(e: Effect, time: TimeSpec): string | undefined {
 function threadMessages({ activity, signups }: ActivityView, effects: Effect[]): ThreadMessage[] {
   const lines: string[] = [];
   const users = new Set<string>();
+  const confirmed = signups.filter((s) => s.status === 'confirmed').length;
   for (const e of effects) {
-    const text = effectText(e, activity.time);
+    const text = effectText(e, activity.time, confirmed);
     if (!text) continue;
     lines.push(text);
     for (const id of recipients(e, signups)) users.add(id);
@@ -88,7 +93,7 @@ function threadMessages({ activity, signups }: ActivityView, effects: Effect[]):
   if (!chunks[0]) return [];
   const bad = effects.some((e) => e.type === 'cancelled');
   chunks[0].embeds = [{ description: lines.join('\n'), color: bad ? COLOR.closed : COLOR.ok }];
-  if (effects.some((e) => e.type === 'filled' || e.type === 'refilled')) {
+  if (effects.some((e) => ['filled', 'refilled', 'started'].includes(e.type))) {
     // For the starter and officers; the finish module refuses everyone else.
     chunks[0].components = [
       row(button(finishId(activity.id), 'Finish', ButtonStyle.Secondary, '🏁')),
@@ -228,10 +233,36 @@ export function createPublisher(
       log.error('publish: post', { activityId: activity.id, err });
     }
 
+    // Looked up or started at most once per publish.
+    let found: SendableChannels | null | undefined;
+    const theThread = async (): Promise<SendableChannels | null> =>
+      (found ??= await groupThread(view, post));
+
+    try {
+      // An event has its thread from the start, and members are added to it as they join.
+      if (activity.kind === 'event' && (activity.state === 'open' || activity.state === 'full')) {
+        const thread = await theThread();
+        if (thread?.isThread()) {
+          let joined = r.effects.flatMap((e) => (e.type === 'joined' ? [e.userId] : []));
+          if (!activity.threadId) {
+            await thread.send({
+              content: `<@${activity.starterId}>`,
+              embeds: notice('Talk about the event here. Everyone who joins is added.').embeds,
+              allowedMentions: { users: [activity.starterId] },
+            });
+            joined = signups.filter((s) => s.status === 'confirmed').map((s) => s.userId);
+          }
+          for (const userId of joined) await thread.members.add(userId);
+        }
+      }
+    } catch (err) {
+      log.error('publish: event thread', { activityId: activity.id, err });
+    }
+
     try {
       const messages = threadMessages(view, r.effects);
       if (messages.length > 0) {
-        const thread = await groupThread(view, post);
+        const thread = await theThread();
         if (thread) {
           for (const m of messages) await thread.send(m);
         } else {

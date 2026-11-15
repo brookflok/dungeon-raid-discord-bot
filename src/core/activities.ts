@@ -16,6 +16,8 @@ import {
 export type Effect =
   | { type: 'filled' } // first time full: thread mention + direct messages
   | { type: 'refilled' } // full again: short thread note only
+  | { type: 'started' } // the starter began with the members signed up so far
+  | { type: 'joined'; userId: string } // a member took a spot
   | { type: 'promoted'; userId: string }
   | { type: 'starterChanged'; userId: string }
   | { type: 'timeChanged' }
@@ -49,6 +51,7 @@ export type SignupChoice =
   { role: Role; label: string } | { status: 'tentative' | 'absent'; label: string };
 
 const CLOSED = 'This group is closed.';
+const MIN_TO_START = 2;
 
 export class ActivityService {
   private readonly storage: Storage;
@@ -111,6 +114,7 @@ export class ActivityService {
     return this.serialize(async () => {
       const activity = await this.requireActivity(activityId);
       if (activity.state !== 'open' && activity.state !== 'full') throw new UserError(CLOSED);
+      if (activity.startedAt) throw new UserError('This group has already started.');
       const role = 'role' in choice ? choice.role : undefined;
       if (role) {
         if (activity.slots[role] === undefined)
@@ -155,6 +159,7 @@ export class ActivityService {
         }
       }
       await this.storage.upsertSignup(signup);
+      if (signup.status === 'confirmed') effects.push({ type: 'joined', userId });
       await this.refreshState(activity, effects);
       return this.finish(activityId, effects, true);
     });
@@ -221,6 +226,29 @@ export class ActivityService {
       activity.time = time;
       await this.storage.updateActivity(activity);
       return this.finish(activityId, [{ type: 'timeChanged' }]);
+    });
+  }
+
+  /**
+   * Starts a dungeon or raid that is not full with the members signed up so far (at least 2):
+   * sign-ups close and the group counts as full from now on.
+   */
+  startNow(activityId: string, actor: Actor): Promise<ActivityResult> {
+    return this.serialize(async () => {
+      const activity = await this.requireManageable(activityId, actor);
+      if (activity.kind === 'event') throw new UserError('Events cannot be started early.');
+      if (activity.startedAt) throw new UserError('This group has already started.');
+      if (activity.state === 'full') throw new UserError('This group is already full.');
+      const signups = await this.storage.listSignups(activityId);
+      if (signups.filter((s) => s.status === 'confirmed').length < MIN_TO_START) {
+        throw new UserError(`You need at least ${MIN_TO_START} players to start.`);
+      }
+      const now = this.clock.now();
+      activity.state = 'full';
+      activity.startedAt = now;
+      activity.filledAt = now;
+      await this.storage.updateActivity(activity);
+      return this.finish(activityId, [{ type: 'started' }]);
     });
   }
 
@@ -406,6 +434,7 @@ export class ActivityService {
 
   /** Moves an open/full activity between open and full and records the effect. */
   private async refreshState(activity: Activity, effects: Effect[]): Promise<void> {
+    if (activity.startedAt) return; // a started group stays full whoever leaves
     const signups = await this.storage.listSignups(activity.id);
     const capped = Object.entries(activity.slots).filter(
       (entry): entry is [string, number] => typeof entry[1] === 'number',

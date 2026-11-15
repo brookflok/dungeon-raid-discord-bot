@@ -36,6 +36,6 @@ describe('SqliteStorage migrations', () => {
     const db = new Database(file);
     const rows = db.prepare('SELECT version FROM schema_migrations').all();
     db.close();
-    expect(rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
+    expect(rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
   });
 });

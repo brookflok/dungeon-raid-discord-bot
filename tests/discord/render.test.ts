@@ -53,7 +53,25 @@ describe('renderActivity', () => {
       'act:a1:dps',
       'act:a1:leave',
       'finish:a1',
+      'manage:start:a1',
     ]);
+  });
+
+  it('closes sign-ups on a started group: only Leave and Finish stay', () => {
+    const r = renderActivity(
+      view({ state: 'full', startedAt: created }, [{ role: 'tank' }, { role: 'dps' }]),
+    );
+    expect(card(r).title).toBe('⚔️ Scarlet Monastery — 🚀 Started');
+    expect(body(r)).toContain('🚀 Started with **2/5** · sign-ups closed');
+    expect(buttonIds(r)).toEqual(['act:a1:leave', 'finish:a1']);
+  });
+
+  it('offers Start now only on open dungeons and raids', () => {
+    const has = (a: Parameters<typeof view>[0]) =>
+      buttonIds(renderActivity(view(a))).includes('manage:start:a1');
+    expect(has({ kind: 'raid' })).toBe(true);
+    expect(has({ state: 'full' })).toBe(false);
+    expect(has({ kind: 'event', slots: { participant: 5 } })).toBe(false);
   });
 
   it('shows progress and the roles still needed', () => {
@@ -98,6 +116,7 @@ describe('renderActivity', () => {
       'act:a1:absent',
       'act:a1:leave',
       'finish:a1',
+      'manage:start:a1',
     ]);
     expect(body(r)).toContain('❔ **TENTATIVE** 1\n　Maybe Mage');
     expect(card(r).footer?.text).toBe('Raid · reminder 1 d and 1 h before');

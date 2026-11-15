@@ -159,6 +159,8 @@ Any other reverse proxy (nginx, Traefik, or the one your hosting provider offers
 
    The log channel receives every finished dungeon, raid and event with its result. The bot needs View Channel, Send Messages and Embed Links there. Without a log channel, finished posts stay in place and turn grey. To lock the thread of a moved group the bot also needs **Manage Threads**; without it the thread is only archived.
 
+   Optional: `/config channels kind:officers channel:#officer-reports` sets a channel for private reports. Make it visible to officers only and give the bot View Channel, Send Messages and Embed Links there. Once it is set, the Finish form has a third field, "Private report to the officers"; its text is posted only in that channel and is not stored anywhere else. Event threads need the bot's **Create Public Threads** permission in the event channel.
+
 4. Name the officer role. Officers may post raids and change settings:
 
    ```
@@ -240,6 +242,9 @@ Dungeon finder:
 Results and log:
 
 - [ ] Finish with a result: the starter presses **Finish** on a group's post (or on the "group is full" message in the thread), picks "Completed" and writes a report. The post disappears from the dungeon channel, the log channel shows a card "✅ … — Completed" with the members and the report, and the thread gets a "Finished" note and is archived.
+- [ ] Private report: with an officers channel set, the starter fills "Private report to the officers" in the Finish form. The officers channel gets a "🚩 Private report" card with the reporter, the members and the text; the public log entry does not show it.
+- [ ] Start now: in a dungeon group with 2 members the starter presses **Start now**. The post reads "Started with 2/5 · sign-ups closed" and keeps only Leave and Finish, and a thread opens that mentions both members. With 1 member the button answers "You need at least 2 players to start."
+- [ ] Event thread: `/event post` creates the post with a thread that mentions the starter; a member who clicks **Join** is added to the thread.
 - [ ] Only the starter or an officer: another member presses **Finish** and gets "Only the starter or an officer can do that."
 - [ ] No result after 3 hours: a group with a start time is left alone until 3 hours after the start. It moves to the log as "❔ … — No result reported" with a mention of the starter and an **Add result** button; after the starter uses it, the entry changes to the result and the button disappears.
 

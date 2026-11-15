@@ -56,7 +56,7 @@ export function timeText(time: TimeSpec): string {
 }
 
 /** Member text: no markdown, links or headings; a zero-width space after @ so nothing mentions. */
-const escape = (text: string): string =>
+export const escape = (text: string): string =>
   escapeMarkdown(text, { maskedLink: true, heading: true }).replace(/@/g, '@​');
 
 /** One member per line, at most `max` of them, then "… and N more". */
@@ -82,6 +82,9 @@ function progress(activity: Activity, signups: Signup[]): string {
       (r) => confirmed.filter((s) => s.role === r.role).length < (activity.slots[r.role] ?? 0),
     )
     .map((r) => (r.role === 'participant' ? 'people' : r.name));
+  if (activity.startedAt) {
+    return `🚀 Started with **${confirmed.length}/${total}** · sign-ups closed`;
+  }
   const state = missing.length > 0 ? `needs ${missing.join(', ')}` : 'full';
   return `${bar} **${confirmed.length}/${total}** · ${state}`;
 }
@@ -122,6 +125,8 @@ function footer(activity: Activity): string {
 
 /** The custom id of the "Finish" and "Add result" buttons, handled by the finish module. */
 export const finishId = (activityId: string): string => `finish:${activityId}`;
+/** The custom id of the "Start now" button, handled by the manage module. */
+export const startId = (activityId: string): string => `manage:start:${activityId}`;
 
 function buttons(activity: Activity): ActionRowData<InteractionButtonComponentData>[] {
   const button = (
@@ -136,10 +141,13 @@ function buttons(activity: Activity): ActionRowData<InteractionButtonComponentDa
     style,
     ...(emoji ? { emoji } : {}),
   });
-  const all = ROLES.filter((r) => activity.slots[r.role] !== undefined).map((r) =>
-    button(r.role, r.button, ButtonStyle.Primary, r.emoji),
-  );
-  if (activity.kind === 'raid') {
+  // A started group takes no more sign-ups.
+  const all = activity.startedAt
+    ? []
+    : ROLES.filter((r) => activity.slots[r.role] !== undefined).map((r) =>
+        button(r.role, r.button, ButtonStyle.Primary, r.emoji),
+      );
+  if (activity.kind === 'raid' && !activity.startedAt) {
     all.push(
       button('tentative', 'Tentative', ButtonStyle.Secondary),
       button('absent', "Can't come", ButtonStyle.Secondary),
@@ -151,6 +159,13 @@ function buttons(activity: Activity): ActionRowData<InteractionButtonComponentDa
     ...button('', 'Finish', ButtonStyle.Secondary, '🏁'),
     customId: finishId(activity.id),
   });
+  if (activity.kind !== 'event' && activity.state === 'open') {
+    // Also for the starter and officers: go with the members signed up so far.
+    all.push({
+      ...button('', 'Start now', ButtonStyle.Success, '🚀'),
+      customId: startId(activity.id),
+    });
+  }
   const rows: ActionRowData<InteractionButtonComponentData>[] = [];
   for (let n = 0; n < all.length; n += 5) {
     rows.push({ type: ComponentType.ActionRow, components: all.slice(n, n + 5) });
@@ -182,8 +197,9 @@ export function renderActivity(view: ActivityView): {
   const result = activity.outcome && OUTCOME[activity.outcome];
   const status = result ? `${result.emoji} ${result.name}` : STATUS[activity.state];
   const title = `${KIND[activity.kind].emoji} ${escape(activity.title)}`.slice(0, 200);
+  const shown = status ?? (activity.startedAt ? '🚀 Started' : undefined);
   const embed: APIEmbed = {
-    title: status ? `${title} — ${status}` : title,
+    title: shown ? `${title} — ${shown}` : title,
     description,
     color: status ? COLOR.closed : KIND[activity.kind].color,
     footer: { text: footer(activity) },

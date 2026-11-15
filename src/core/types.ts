@@ -19,6 +19,7 @@ export interface Activity {
   state: ActivityState;
   createdAt: Date;
   filledAt?: Date;
+  startedAt?: Date; // the starter began with an unfilled group; sign-ups are closed
   channelId?: string;
   messageId?: string;
   threadId?: string;
@@ -49,7 +50,8 @@ export interface Template {
 
 export interface GuildConfig {
   guildId: string;
-  channels: Partial<Record<Kind | 'log', string>>; // log: where finished activities are moved
+  // log: where finished activities are moved; officers: where private reports go
+  channels: Partial<Record<Kind | 'log' | 'officers', string>>;
   officerRoleIds: string[];
   hostRoleIds: Partial<Record<Kind, string[]>>; // who may host a kind besides officers
   reminders: Record<Kind, number[]>;

@@ -374,6 +374,70 @@ describe('finish form', () => {
     expect(published).toHaveLength(1);
   });
 
+  it('offers the private report only when an officers channel is set', async () => {
+    const id = await group('u1');
+    await s.config.update('g1', { channels: { dungeon: 'c1', officers: 'off' } });
+    expect(fieldIds(await opened(finish, [id]))).toEqual(['outcome', 'report', 'private']);
+  });
+
+  it('sends the private report to the officers channel and keeps it out of the log', async () => {
+    const id = await group('u1');
+    await s.config.update('g1', { channels: { dungeon: 'c1', officers: 'off' } });
+    const sent: { embeds: { title: string; description: string }[] }[] = [];
+    const channel = {
+      isSendable: () => true,
+      send: async (m: (typeof sent)[0]) => void sent.push(m),
+    };
+    member = {
+      ...admin,
+      client: { channels: { fetch: async (cid: string) => (cid === 'off' ? channel : null) } },
+    } as typeof admin;
+    const reply = await submitted(
+      finish,
+      { outcome: 'completed', report: 'Fine.', private: 'The healer insulted everyone.' },
+      [id],
+    );
+    expect(reply.embeds[0]?.description).toContain('your private report went to the officers');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.embeds[0]!.title).toBe('🚩 Private report — Deadmines');
+    expect(sent[0]!.embeds[0]!.description).toContain('Reported by <@u1>');
+    expect(sent[0]!.embeds[0]!.description).toContain('The healer insulted everyone.');
+    expect((await s.activities.get(id))!.activity.report).toBe('Fine.');
+  });
+
+  it('sends nothing to the officers when the private report is empty', async () => {
+    const id = await group('u1');
+    await s.config.update('g1', { channels: { dungeon: 'c1', officers: 'off' } });
+    const reply = await submitted(finish, { outcome: 'completed', report: '', private: ' ' }, [id]);
+    expect(reply.embeds[0]?.description).toBe('Thanks, the result is recorded.');
+  });
+
+  it('starts a group with the Start now button', async () => {
+    const two = await s.activities.create({
+      guildId: 'g1',
+      kind: 'dungeon',
+      title: 'Deadmines',
+      starter: { userId: 'u1', label: 'S' },
+      starterRole: 'tank',
+      time: { type: 'asap' },
+      slots: { tank: 1, healer: 1, dps: 3 },
+      reminderOffsetsMin: [],
+    });
+    await s.activities.signUp(two.activity.id, 'u2', { role: 'dps', label: 'D' });
+    let reply: { embeds: { description?: string }[] } | undefined;
+    const i = {
+      ...member,
+      deferReply: async () => undefined,
+      editReply: async (r: typeof reply) => void (reply = r),
+    };
+    await manage.onComponent!(i as unknown as MessageComponentInteraction, s, [
+      'start',
+      two.activity.id,
+    ]);
+    expect(reply?.embeds[0]?.description).toBe('The group is started and sign-ups are closed.');
+    expect(published.at(-1)?.effects).toEqual([{ type: 'started' }]);
+  });
+
   it('does not open for a member who is neither the starter nor an officer', async () => {
     const id = await group('someone-else');
     const i = { ...member, memberPermissions: { has: () => false } };
