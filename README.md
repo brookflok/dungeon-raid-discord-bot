@@ -10,14 +10,14 @@ A Discord bot for a World of Warcraft: Forever guild. Members find dungeon group
 
 ## Commands
 
-| Command                                                                  | Who      | What it does                                         |
-| ------------------------------------------------------------------------ | -------- | ---------------------------------------------------- |
-| `/dungeon start`, `cancel`, `time`                                       | everyone | Start a dungeon group, cancel it, or change its time |
-| `/raid post`, `cancel`, `time`                                           | raid hosts | Post a raid, cancel it, or change its time           |
-| `/event post`, `cancel`, `time`                                          | everyone | Post an event, cancel it, or change its time         |
-| `/profile link`, `refresh`, `add`, `show`, `main`, `remove`              | everyone | Link Battle.net and manage characters                |
-| `/config channels`, `officers`, `hosts`, `reminders`, `timezone`, `panel`, `show` | officers | Server settings                                      |
-| `/template add`, `edit`, `disable`, `enable`, `list`                     | officers | Manage the dungeon and raid lists                    |
+| Command                                                                           | Who        | What it does                                         |
+| --------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------- |
+| `/dungeon start`, `cancel`, `time`                                                | everyone   | Start a dungeon group, cancel it, or change its time |
+| `/raid post`, `cancel`, `time`                                                    | raid hosts | Post a raid, cancel it, or change its time           |
+| `/event post`, `cancel`, `time`                                                   | everyone   | Post an event, cancel it, or change its time         |
+| `/profile link`, `refresh`, `add`, `show`, `main`, `remove`                       | everyone   | Link Battle.net and manage characters                |
+| `/config channels`, `officers`, `hosts`, `reminders`, `timezone`, `panel`, `show` | officers   | Server settings                                      |
+| `/template add`, `edit`, `disable`, `enable`, `list`                              | officers   | Manage the dungeon and raid lists                    |
 
 The bot starts with 20 dungeons and 7 raids.
 
